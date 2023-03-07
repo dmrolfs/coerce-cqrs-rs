@@ -1,0 +1,5 @@
+[env]
+LOG_LEVEL = "TRACE"
+
+[build]
+rustflags = ["--cfg", "tracing_unstable"]
