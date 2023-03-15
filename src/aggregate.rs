@@ -14,9 +14,77 @@
 //     }
 // }
 
+use std::error::Error;
+use std::fmt::{Debug, Display};
+use coerce::actor::context::ActorContext;
+use coerce::actor::message::Message;
+use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use thiserror::Error;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum CommandResult<T>
+where
+    T: Debug,
+{
+    Ok(T),
+    Rejected(String),
+    Err(String,)
+}
+
+impl<T> CommandResult<T>
+where
+    T: Debug + Serialize + DeserializeOwned,
+{
+    pub fn ok(payload: T) -> Self { Self::Ok(payload) }
+
+    pub fn rejected(message: impl Into<String>) -> Self { Self::Rejected(message.into()) }
+
+    pub fn err(error: impl Display) -> Self { Self::Err(error.to_string()) }
+}
+
+impl<T, E> From<E> for CommandResult<T>
+where
+    T: Debug,
+    E: Error + Display,
+{
+    fn from(error: E) -> Self {
+        Self::Err(error.to_string())
+    }
+}
+
+pub trait ApplyAggregateEvent<E> {
+    type BaseType;
+    fn apply_event(&mut self, event: E, ctx: &mut ActorContext) -> Option<Self::BaseType>;
+}
+
+pub trait AggregateState<C, E>
+where
+    C: Message,
+{
+    type Error;
+    type State;
+
+    fn handle_command(&self, command: C, ctx: &mut ActorContext) -> Result<Vec<E>, Self::Error>;
+
+    fn apply_event(&mut self, event: E, ctx: &mut ActorContext) -> Option<Self::State>;
+}
+
+#[derive(Debug, Error)]
+pub enum AggregateError {
+    #[error("rejected command: {0}")]
+    RejectedCommand(String),
+
+    #[error("{0}")]
+    Persist(#[from] coerce::persistent::journal::PersistErr),
+
+    // #[error("{0}")]
+    // ActorRef(#[from] coerce::actor::ActorRefErr),
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::fixtures::{Msg, TestActor};
+    use crate::test_fixtures::test_actor::{Msg, TestActor};
     use claim::{assert_ok, assert_some};
     use coerce::actor::system::ActorSystem;
     use coerce::actor::IntoActor;
@@ -27,7 +95,7 @@ mod tests {
 
     #[test]
     pub fn test_aggregate_recovery() {
-        Lazy::force(&crate::fixtures::TEST_TRACING);
+        Lazy::force(&crate::test_fixtures::TEST_TRACING);
         let main_span = tracing::info_span!("aggregate::test_aggregate_recovery");
         let _main_span_guard = main_span.enter();
 

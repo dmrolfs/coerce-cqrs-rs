@@ -2,7 +2,44 @@ use coerce::persistent::journal::provider::StorageProvider;
 use coerce::persistent::journal::storage::{JournalEntry, JournalStorage, JournalStorageRef};
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::sync::Arc;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use crate::{ProjectionError, ViewContext, ViewRepository};
+
+/// A memory-back view repository for use in a GenericProcessor
+#[derive(Debug, Default)]
+pub struct InMemoryViewRepository<V>
+where
+    V: Debug + Serialize + DeserializeOwned + Send + Sync,
+{
+    _marker: PhantomData<V>,
+}
+
+#[async_trait]
+impl<V> ViewRepository for InMemoryViewRepository<V>
+where
+    V: Debug + Serialize + DeserializeOwned + Send + Sync,
+{
+    type View = V;
+
+    #[instrument(level="debug", skip(self))]
+    async fn load(&self, view_id: &str) -> Result<Option<Self::View>, ProjectionError> {
+        todo!()
+    }
+
+    #[instrument(level="debug", skip(self))]
+    async fn load_with_context(&self, view_id: &str) -> Result<Option<(Self::View, ViewContext)>, ProjectionError> {
+        todo!()
+    }
+
+    #[instrument(level="debug", skip(self))]
+    async fn update_view(&self, view: Self::View, context: ViewContext) -> Result<(), ProjectionError> {
+        todo!()
+    }
+}
 
 #[derive(Debug)]
 struct ActorJournal {
@@ -36,6 +73,7 @@ pub struct InMemoryStorageProvider {
     store: Arc<InMemoryJournalStorage>,
 }
 
+#[allow(dead_code)]
 impl InMemoryStorageProvider {
     pub fn new() -> Self {
         Self::default()

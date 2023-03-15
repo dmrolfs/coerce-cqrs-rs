@@ -22,8 +22,19 @@ extern crate tracing;
 extern crate coerce_macros;
 
 mod aggregate;
-mod memory;
-mod postgres;
+pub mod memory;
+pub mod postgres;
+mod projection;
+
+pub use projection::{
+    GenericProcessor, ApplyViewEvents, View, ProcessorErrorHandler, ProjectionError,
+    EventProcessor, ViewRepository, EventEnvelope, Offset, ViewContext,
+};
+
+pub use aggregate::{CommandResult, AggregateState, ApplyAggregateEvent,};
 
 #[cfg(test)]
-mod fixtures;
+mod test_fixtures;
+
+#[dock(hidden)]
+pub mod doc;

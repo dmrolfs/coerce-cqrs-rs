@@ -1,6 +1,10 @@
 mod actor;
 mod config;
 mod provider;
+mod view_repository;
+
+#[doc(hidden)]
+pub mod doc;
 
 pub use actor::{protocol, PostgresJournal};
 pub use config::PostgresStorageConfig;
