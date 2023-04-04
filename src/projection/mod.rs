@@ -72,7 +72,7 @@ impl PersistenceId {
     }
 
     pub fn from_aggregate_id<A: PersistentActor>(aggregate_id: &str) -> Self {
-        let aggregate_name = crate::pretty_type_name::pretty_type_name::<A>();
+        let aggregate_name = pretty_type_name::pretty_type_name::<A>();
         Self::from_parts(aggregate_name.as_str(), aggregate_id)
     }
 }
