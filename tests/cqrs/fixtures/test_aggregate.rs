@@ -1,9 +1,12 @@
-use crate::aggregate::CommandResult;
-use crate::aggregate::{AggregateError, AggregateState, ApplyAggregateEvent};
 use coerce::actor::context::ActorContext;
 use coerce::actor::message::{Handler, Message};
 use coerce::persistent::journal::types::JournalTypes;
 use coerce::persistent::{PersistentActor, Recover, RecoverSnapshot};
+use coerce_cqrs::projection::PersistenceId;
+use coerce_cqrs::AggregateError;
+use coerce_cqrs::{AggregateState, ApplyAggregateEvent, CommandResult};
+use coerce_macros::{JsonMessage, JsonSnapshot};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use tagid::{CuidGenerator, Entity, Label};
 
@@ -22,7 +25,6 @@ impl Default for TestView {
     }
 }
 
-#[allow(dead_code)]
 pub fn apply_test_event_to_view(mut view: TestView, event: TestEvent) -> TestView {
     match event {
         TestEvent::Started(label) => {
@@ -85,6 +87,10 @@ impl Entity for TestAggregate {
 
 #[async_trait]
 impl PersistentActor for TestAggregate {
+    fn persistence_key(&self, ctx: &ActorContext) -> String {
+        PersistenceId::from_aggregate_id::<Self>(ctx.id()).to_string()
+    }
+
     #[instrument(level = "info", skip(journal))]
     fn configure(journal: &mut JournalTypes<Self>) {
         journal
@@ -101,17 +107,20 @@ impl Handler<TestCommand> for TestAggregate {
         command: TestCommand,
         ctx: &mut ActorContext,
     ) -> CommandResult<String> {
+        debug!("DMR: aggregate state handle command into event(s)...");
         let events = match self.state.handle_command(command, ctx) {
             Ok(events) => events,
             Err(AggregateError::RejectedCommand(msg)) => return CommandResult::Rejected(msg),
             Err(err) => return err.into(),
         };
+        debug!(?events, "DMR: converted command into event(s)");
 
         for event in events.iter() {
             if let Err(error) = self.persist(event, ctx).await {
                 return error.into();
             }
         }
+        debug!(?events, "DMR: converted command into event(s)");
 
         // perform 0.. side effect tasks
 
@@ -120,6 +129,7 @@ impl Handler<TestCommand> for TestAggregate {
                 self.state = new_state;
             }
         });
+        debug!(new_state=?self.state, "DMR: applied events to state");
 
         // determine result corresponding to command handling
         CommandResult::ok(self.to_string())

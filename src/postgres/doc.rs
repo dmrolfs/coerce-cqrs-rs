@@ -1,22 +1,21 @@
-use crate::doc::{MyAggregate, MyEvent};
-use crate::{EventEnvelope, View};
+use crate::doc::MyEvent;
 
-pub type MyViewRepository = In
+// pub type MyViewRepository = In
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct MvView {
+pub struct MyView {
     pub count: usize,
     pub lots_done: bool,
 }
 
-impl View<MyEvent> for MyView {
-    fn update(&mut self, event_envelope: &EventEnvelope<MyEvent>) {
-        match &event_envelope.event {
-            MyEvent::SomethingWasDone => {
-                self.count += 1;
-                if !self.lots_done && 2 < self.count {
-                    self.lots_done = true;
-                }
-            },
+pub const fn apply_event_on_my_view(mut view: MyView, event: MyEvent) -> MyView {
+    match event {
+        MyEvent::SomethingWasDone => {
+            view.count += 1;
+            if !view.lots_done && 2 < view.count {
+                view.lots_done = true;
+            }
         }
     }
+
+    view
 }

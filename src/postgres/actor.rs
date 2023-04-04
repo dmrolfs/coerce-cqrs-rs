@@ -8,9 +8,11 @@ use tokio::sync::oneshot;
 
 pub mod protocol {
     use super::*;
+    use crate::projection::StorageKey;
 
+    #[derive(Debug)]
     pub struct WriteJournal {
-        pub key: String,
+        pub storage_key: StorageKey,
         pub entry: JournalEntry,
         pub result_channel: oneshot::Sender<anyhow::Result<()>>,
     }
@@ -19,8 +21,9 @@ pub mod protocol {
         type Result = ();
     }
 
+    #[derive(Debug)]
     pub struct WriteSnapshot {
-        pub key: String,
+        pub storage_key: StorageKey,
         pub entry: JournalEntry,
         pub result_channel: oneshot::Sender<anyhow::Result<()>>,
     }
@@ -29,8 +32,9 @@ pub mod protocol {
         type Result = ();
     }
 
+    #[derive(Debug)]
     pub struct ReadSnapshot {
-        pub key: String,
+        pub storage_key: StorageKey,
         pub result_channel: oneshot::Sender<anyhow::Result<Option<JournalEntry>>>,
     }
 
@@ -38,8 +42,9 @@ pub mod protocol {
         type Result = ();
     }
 
+    #[derive(Debug)]
     pub struct ReadMessages {
-        pub key: String,
+        pub storage_key: StorageKey,
         pub from_sequence: i64,
         pub result_channel: oneshot::Sender<anyhow::Result<Option<Vec<JournalEntry>>>>,
     }
@@ -48,20 +53,21 @@ pub mod protocol {
         type Result = ();
     }
 
-    pub struct Delete(pub Vec<String>);
+    #[derive(Debug)]
+    pub struct DeleteAll(pub Vec<StorageKey>);
 
-    impl Message for Delete {
+    impl Message for DeleteAll {
         type Result = anyhow::Result<()>;
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct PostgresJournal(crate::memory::InMemoryStorageProvider);
 
 impl PostgresJournal {
     #[allow(dead_code)]
     pub fn new() -> Self {
-        Self(crate::memory::InMemoryStorageProvider::default())
+        Self::default()
     }
 
     #[allow(dead_code)]
@@ -83,12 +89,13 @@ use protocol::*;
 
 #[async_trait]
 impl Handler<WriteJournal> for PostgresJournal {
+    #[instrument(level = "debug", skip(_ctx))]
     async fn handle(&mut self, message: WriteJournal, _ctx: &mut ActorContext) {
         let result = self
             .0
             .journal_storage()
             .unwrap()
-            .write_message(message.key.as_str(), message.entry)
+            .write_message(message.storage_key.as_ref(), message.entry)
             .await;
         let _ = message.result_channel.send(result);
     }
@@ -96,12 +103,13 @@ impl Handler<WriteJournal> for PostgresJournal {
 
 #[async_trait]
 impl Handler<WriteSnapshot> for PostgresJournal {
+    #[instrument(level = "debug", skip(_ctx))]
     async fn handle(&mut self, message: WriteSnapshot, _ctx: &mut ActorContext) {
         let result = self
             .0
             .journal_storage()
             .unwrap()
-            .write_snapshot(message.key.as_str(), message.entry)
+            .write_snapshot(message.storage_key.as_ref(), message.entry)
             .await;
         let _ = message.result_channel.send(result);
     }
@@ -109,12 +117,13 @@ impl Handler<WriteSnapshot> for PostgresJournal {
 
 #[async_trait]
 impl Handler<ReadSnapshot> for PostgresJournal {
+    #[instrument(level = "debug", skip(_ctx))]
     async fn handle(&mut self, message: ReadSnapshot, _ctx: &mut ActorContext) {
         let result = self
             .0
             .journal_storage()
             .unwrap()
-            .read_latest_snapshot(message.key.as_str())
+            .read_latest_snapshot(message.storage_key.as_ref())
             .await;
         let _ = message.result_channel.send(result);
     }
@@ -122,26 +131,28 @@ impl Handler<ReadSnapshot> for PostgresJournal {
 
 #[async_trait]
 impl Handler<ReadMessages> for PostgresJournal {
+    #[instrument(level = "debug", skip(_ctx))]
     async fn handle(&mut self, message: ReadMessages, _ctx: &mut ActorContext) {
         let result = self
             .0
             .journal_storage()
             .unwrap()
-            .read_latest_messages(message.key.as_str(), message.from_sequence)
+            .read_latest_messages(message.storage_key.as_ref(), message.from_sequence)
             .await;
         let _ = message.result_channel.send(result);
     }
 }
 
 #[async_trait]
-impl Handler<Delete> for PostgresJournal {
-    async fn handle(&mut self, message: Delete, _ctx: &mut ActorContext) -> anyhow::Result<()> {
+impl Handler<DeleteAll> for PostgresJournal {
+    #[instrument(level = "debug", skip(_ctx))]
+    async fn handle(&mut self, message: DeleteAll, _ctx: &mut ActorContext) -> anyhow::Result<()> {
         let storage = self.0.journal_storage().unwrap();
 
         let mut results = Vec::with_capacity(message.0.len());
-        for pid in message.0 {
+        for storage_key in message.0 {
             let s = storage.clone();
-            let handle = tokio::spawn(async move { s.delete_all(pid.as_str()).await });
+            let handle = tokio::spawn(async move { s.delete_all(storage_key.as_ref()).await });
             results.push(handle);
         }
         futures::future::join_all(results)

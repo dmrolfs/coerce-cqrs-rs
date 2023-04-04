@@ -24,17 +24,14 @@ extern crate coerce_macros;
 mod aggregate;
 pub mod memory;
 pub mod postgres;
-mod projection;
+mod pretty_type_name;
+pub mod projection;
 
-pub use projection::{
-    GenericProcessor, ApplyViewEvents, View, ProcessorErrorHandler, ProjectionError,
-    EventProcessor, ViewRepository, EventEnvelope, Offset, ViewContext,
-};
-
-pub use aggregate::{CommandResult, AggregateState, ApplyAggregateEvent,};
+pub use aggregate::{AggregateError, AggregateState, ApplyAggregateEvent, CommandResult};
+pub use pretty_type_name::{pretty_type_name, pretty_type_name_str};
 
 #[cfg(test)]
 mod test_fixtures;
 
-#[dock(hidden)]
+#[doc(hidden)]
 pub mod doc;

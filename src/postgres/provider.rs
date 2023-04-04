@@ -1,6 +1,7 @@
 use super::actor::{protocol, PostgresJournal};
 use crate::postgres::config::PostgresStorageConfig;
 use crate::postgres::CqrsError;
+use crate::projection::StorageKey;
 use coerce::actor::system::ActorSystem;
 use coerce::actor::{IntoActor, LocalActorRef};
 use coerce::persistent::journal::provider::StorageProvider;
@@ -53,6 +54,7 @@ async fn create_provider(
                 "{key_prefix}{pid}:{value_type}",
                 key_prefix = config.key_prefix
             )
+            .into()
         },
     });
     Ok(PostgresStorageProvider { storage })
@@ -74,7 +76,7 @@ fn connect_with(config: &PostgresStorageConfig) -> PgPool {
 
 pub struct PostgresJournalStorage<K>
 where
-    K: Fn(&str, &str, &PostgresStorageConfig) -> String,
+    K: Fn(&str, &str, &PostgresStorageConfig) -> StorageKey,
 {
     journal: LocalActorRef<PostgresJournal>,
     config: Arc<PostgresStorageConfig>,
@@ -83,7 +85,7 @@ where
 
 impl<K> fmt::Debug for PostgresJournalStorage<K>
 where
-    K: Fn(&str, &str, &PostgresStorageConfig) -> String,
+    K: Fn(&str, &str, &PostgresStorageConfig) -> StorageKey,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PostgresJournalStorage")
@@ -101,79 +103,84 @@ enum EntryType {
 
 impl<K> PostgresJournalStorage<K>
 where
-    K: Fn(&str, &str, &PostgresStorageConfig) -> String,
+    K: Fn(&str, &str, &PostgresStorageConfig) -> StorageKey,
 {
-    fn channel_key_for<R>(
+    fn result_channel_and_storage_key_for<R>(
         &self,
         persistence_id: &str,
         entry: EntryType,
-    ) -> (String, (oneshot::Sender<R>, oneshot::Receiver<R>)) {
+    ) -> ((oneshot::Sender<R>, oneshot::Receiver<R>), StorageKey) {
         let channel = oneshot::channel::<R>();
-        let key = (self.key_provider_fn)(persistence_id, entry.into(), self.config.as_ref());
-        (key, channel)
+        let storage_key =
+            (self.key_provider_fn)(persistence_id, entry.into(), self.config.as_ref());
+        (channel, storage_key)
     }
 }
 
 #[async_trait]
 impl<K> JournalStorage for PostgresJournalStorage<K>
 where
-    K: Fn(&str, &str, &PostgresStorageConfig) -> String + Send + Sync,
+    K: Fn(&str, &str, &PostgresStorageConfig) -> StorageKey + Send + Sync,
 {
-    #[instrument(level = "trace", skip())]
+    #[instrument(level = "debug", skip())]
     async fn write_snapshot(
         &self,
         persistence_id: &str,
         entry: JournalEntry,
     ) -> anyhow::Result<()> {
-        let (key, (result_channel, rx)) = self.channel_key_for(persistence_id, EntryType::Snapshot);
+        let ((result_channel, rx), storage_key) =
+            self.result_channel_and_storage_key_for(persistence_id, EntryType::Snapshot);
         self.journal.notify(protocol::WriteSnapshot {
-            key,
+            storage_key,
             entry,
             result_channel,
         })?;
         rx.await?
     }
 
-    #[instrument(level = "trace", skip())]
+    #[instrument(level = "debug", skip())]
     async fn write_message(&self, persistence_id: &str, entry: JournalEntry) -> anyhow::Result<()> {
-        let (key, (result_channel, rx)) = self.channel_key_for(persistence_id, EntryType::Journal);
+        let ((result_channel, rx), storage_key) =
+            self.result_channel_and_storage_key_for(persistence_id, EntryType::Journal);
         self.journal.notify(protocol::WriteJournal {
-            key,
+            storage_key,
             entry,
             result_channel,
         })?;
         rx.await?
     }
 
-    #[instrument(level = "trace", skip())]
+    #[instrument(level = "debug", skip())]
     async fn read_latest_snapshot(
         &self,
         persistence_id: &str,
     ) -> anyhow::Result<Option<JournalEntry>> {
-        let (key, (result_channel, rx)) = self.channel_key_for(persistence_id, EntryType::Snapshot);
+        let ((result_channel, rx), storage_key) =
+            self.result_channel_and_storage_key_for(persistence_id, EntryType::Snapshot);
         self.journal.notify(protocol::ReadSnapshot {
-            key,
+            storage_key,
             result_channel,
         })?;
         rx.await?
     }
 
-    #[instrument(level = "trace", skip())]
+    #[instrument(level = "debug", skip())]
     async fn read_latest_messages(
         &self,
         persistence_id: &str,
         from_sequence: i64,
     ) -> anyhow::Result<Option<Vec<JournalEntry>>> {
-        let (key, (result_channel, rx)) = self.channel_key_for(persistence_id, EntryType::Journal);
+        let ((result_channel, rx), storage_key) =
+            self.result_channel_and_storage_key_for(persistence_id, EntryType::Journal);
         self.journal.notify(protocol::ReadMessages {
-            key,
+            storage_key,
             from_sequence,
             result_channel,
         })?;
         rx.await?
     }
 
-    #[instrument(level = "trace", skip())]
+    #[instrument(level = "debug", skip())]
     async fn delete_all(&self, persistence_id: &str) -> anyhow::Result<()> {
         todo!()
     }

@@ -1,9 +1,9 @@
+use crate::{ApplyAggregateEvent, CommandResult};
 use coerce::actor::context::ActorContext;
 use coerce::actor::message::Handler;
 use coerce::persistent::journal::types::JournalTypes;
 use coerce::persistent::{PersistentActor, Recover};
-use tagid::{CuidGenerator, CuidId, Entity, Id, Label};
-use crate::{CommandResult, ApplyAggregateEvent};
+use tagid::{CuidGenerator, Entity, Label};
 
 #[derive(Debug, JsonMessage, Serialize, Deserialize)]
 #[result("CommandResult<usize>")]
@@ -12,7 +12,7 @@ pub enum MyCommand {
     BadCommand,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, JsonMessage, Serialize, Deserialize,)]
+#[derive(Debug, Clone, PartialEq, Eq, JsonMessage, Serialize, Deserialize)]
 #[result("()")]
 pub enum MyEvent {
     SomethingWasDone,
@@ -49,7 +49,7 @@ impl Handler<MyCommand> for MyAggregate {
         }
 
         events.into_iter().for_each(|event| {
-            if let Some(new_agg)  = self.apply_event(event, ctx) {
+            if let Some(new_agg) = self.apply_event(event, ctx) {
                 *self = new_agg;
             }
         });
@@ -63,7 +63,9 @@ impl ApplyAggregateEvent<MyEvent> for MyAggregate {
 
     fn apply_event(&mut self, event: MyEvent, _ctx: &mut ActorContext) -> Option<Self::BaseType> {
         match event {
-            MyEvent::SomethingWasDone => { self.count += 1; },
+            MyEvent::SomethingWasDone => {
+                self.count += 1;
+            }
         }
 
         None
@@ -72,7 +74,7 @@ impl ApplyAggregateEvent<MyEvent> for MyAggregate {
 
 #[async_trait]
 impl Recover<MyEvent> for MyAggregate {
-    async fn recover(&mut self, message: MyEvent, ctx: &mut ActorContext) {
+    async fn recover(&mut self, event: MyEvent, ctx: &mut ActorContext) {
         if let Some(new_agg) = self.apply_event(event, ctx) {
             *self = new_agg;
         }

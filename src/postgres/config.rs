@@ -2,7 +2,7 @@ use secrecy::{ExposeSecret, Secret};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use std::time::Duration;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct PostgresStorageConfig {
     pub key_prefix: String,
     pub username: String,
@@ -12,12 +12,16 @@ pub struct PostgresStorageConfig {
     pub database_name: String,
     pub require_ssl: bool,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_connections: Option<u32>,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_connections: Option<u32>,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_lifetime: Option<Duration>,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_timeout: Option<Duration>,
 }
 
@@ -90,3 +94,5 @@ impl PartialEq for PostgresStorageConfig {
             && self.idle_timeout == other.idle_timeout
     }
 }
+
+impl Eq for PostgresStorageConfig {}

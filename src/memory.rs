@@ -3,43 +3,46 @@ use coerce::persistent::journal::storage::{JournalEntry, JournalStorage, Journal
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::marker::PhantomData;
 use std::sync::Arc;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use crate::{ProjectionError, ViewContext, ViewRepository};
 
-/// A memory-back view repository for use in a GenericProcessor
-#[derive(Debug, Default)]
-pub struct InMemoryViewRepository<V>
-where
-    V: Debug + Serialize + DeserializeOwned + Send + Sync,
-{
-    _marker: PhantomData<V>,
-}
-
-#[async_trait]
-impl<V> ViewRepository for InMemoryViewRepository<V>
-where
-    V: Debug + Serialize + DeserializeOwned + Send + Sync,
-{
-    type View = V;
-
-    #[instrument(level="debug", skip(self))]
-    async fn load(&self, view_id: &str) -> Result<Option<Self::View>, ProjectionError> {
-        todo!()
-    }
-
-    #[instrument(level="debug", skip(self))]
-    async fn load_with_context(&self, view_id: &str) -> Result<Option<(Self::View, ViewContext)>, ProjectionError> {
-        todo!()
-    }
-
-    #[instrument(level="debug", skip(self))]
-    async fn update_view(&self, view: Self::View, context: ViewContext) -> Result<(), ProjectionError> {
-        todo!()
-    }
-}
+// /// A memory-back view repository for use in a GenericProcessor
+// #[derive(Debug, Default)]
+// pub struct InMemoryViewRepository<V>
+// where
+//     V: Debug + Serialize + DeserializeOwned + Send + Sync,
+// {
+//     _marker: PhantomData<V>,
+// }
+//
+// #[async_trait]
+// impl<V> ViewRepository for InMemoryViewRepository<V>
+// where
+//     V: Debug + Serialize + DeserializeOwned + Send + Sync,
+// {
+//     type View = V;
+//
+//     #[instrument(level = "debug", skip(self))]
+//     async fn load(&self, view_id: &str) -> Result<Option<Self::View>, ProjectionError> {
+//         todo!()
+//     }
+//
+//     #[instrument(level = "debug", skip(self))]
+//     async fn load_with_context(
+//         &self,
+//         view_id: &str,
+//     ) -> Result<Option<(Self::View, ViewContext)>, ProjectionError> {
+//         todo!()
+//     }
+//
+//     #[instrument(level = "debug", skip(self))]
+//     async fn update_view(
+//         &self,
+//         view: Self::View,
+//         context: ViewContext,
+//     ) -> Result<(), ProjectionError> {
+//         todo!()
+//     }
+// }
 
 #[derive(Debug)]
 struct ActorJournal {
@@ -88,7 +91,7 @@ impl StorageProvider for InMemoryStorageProvider {
 
 #[async_trait]
 impl JournalStorage for InMemoryJournalStorage {
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "debug")]
     async fn write_snapshot(
         &self,
         persistence_id: &str,
@@ -107,7 +110,7 @@ impl JournalStorage for InMemoryJournalStorage {
         Ok(())
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "debug")]
     async fn write_message(&self, persistence_id: &str, entry: JournalEntry) -> anyhow::Result<()> {
         let mut store = self.store.write();
         if let Some(journal) = store.get_mut(persistence_id) {
@@ -122,7 +125,7 @@ impl JournalStorage for InMemoryJournalStorage {
         Ok(())
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "debug")]
     async fn read_latest_snapshot(
         &self,
         persistence_id: &str,
@@ -134,7 +137,7 @@ impl JournalStorage for InMemoryJournalStorage {
             .and_then(|j| j.snapshots.last().cloned()))
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "debug")]
     async fn read_latest_messages(
         &self,
         persistence_id: &str,
@@ -158,7 +161,7 @@ impl JournalStorage for InMemoryJournalStorage {
                 }
             };
 
-            trace!(
+            debug!(
                 "storage found {} messages for persistence_id={}, from_sequence={}",
                 messages.len(),
                 persistence_id,
@@ -169,7 +172,7 @@ impl JournalStorage for InMemoryJournalStorage {
         }))
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "debug")]
     async fn delete_all(&self, persistence_id: &str) -> anyhow::Result<()> {
         let mut store = self.store.write();
         store.remove(persistence_id);

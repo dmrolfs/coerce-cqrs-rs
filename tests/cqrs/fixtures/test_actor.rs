@@ -8,6 +8,7 @@ use coerce::persistent::{
     RecoveryFailurePolicy, RecoveryResult,
 };
 use coerce_macros::{JsonMessage, JsonSnapshot};
+use serde::{Deserialize, Serialize};
 use tagid::{CuidGenerator, Entity, Label};
 
 #[derive(Debug, Default, Label)]

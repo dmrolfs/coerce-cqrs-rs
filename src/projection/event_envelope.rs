@@ -1,39 +1,8 @@
+use crate::projection::Offset;
 use iso8601_timestamp::Timestamp;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct Offset(Timestamp, u64);
-
-impl Offset {
-    pub const fn new(timestamp: Timestamp, seen: u64) -> Self {
-        Self(timestamp, seen)
-    }
-}
-
-impl fmt::Display for Offset {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}@{}", self.1, self.0)
-    }
-}
-
-impl Ord for Offset {
-    fn cmp(&self, other: &Self) -> Ordering {
-        let result = self.1.cmp(&other.1);
-        if result != Ordering::Equal {
-            result
-        } else {
-            self.0.cmp(&other.0)
-        }
-    }
-}
-impl PartialOrd for Offset {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
 
 #[derive(Clone)]
 pub struct EventEnvelope<E> {

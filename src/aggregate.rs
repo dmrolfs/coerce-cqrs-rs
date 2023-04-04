@@ -14,33 +14,40 @@
 //     }
 // }
 
-use std::error::Error;
-use std::fmt::{Debug, Display};
 use coerce::actor::context::ActorContext;
 use coerce::actor::message::Message;
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fmt::{Debug, Display};
 use thiserror::Error;
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub enum CommandResult<T>
 where
     T: Debug,
 {
     Ok(T),
     Rejected(String),
-    Err(String,)
+    Err(String),
 }
 
 impl<T> CommandResult<T>
 where
     T: Debug + Serialize + DeserializeOwned,
 {
-    pub fn ok(payload: T) -> Self { Self::Ok(payload) }
+    pub const fn ok(payload: T) -> Self {
+        Self::Ok(payload)
+    }
 
-    pub fn rejected(message: impl Into<String>) -> Self { Self::Rejected(message.into()) }
+    pub fn rejected(message: impl Into<String>) -> Self {
+        Self::Rejected(message.into())
+    }
 
-    pub fn err(error: impl Display) -> Self { Self::Err(error.to_string()) }
+    pub fn err(error: impl Display) -> Self {
+        Self::Err(error.to_string())
+    }
 }
 
 impl<T, E> From<E> for CommandResult<T>
@@ -71,13 +78,13 @@ where
 }
 
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum AggregateError {
     #[error("rejected command: {0}")]
     RejectedCommand(String),
 
     #[error("{0}")]
     Persist(#[from] coerce::persistent::journal::PersistErr),
-
     // #[error("{0}")]
     // ActorRef(#[from] coerce::actor::ActorRefErr),
 }
@@ -91,7 +98,7 @@ mod tests {
     use coerce::persistent::journal::provider::StorageProvider;
     use coerce::persistent::Persistence;
     use once_cell::sync::Lazy;
-    use tagid::{CuidId, Entity};
+    use tagid::Entity;
 
     #[test]
     pub fn test_aggregate_recovery() {
