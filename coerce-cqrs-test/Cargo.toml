@@ -1,0 +1,66 @@
+[package]
+name = "coerce-cqrs-test"
+description = "CQRS structure over coerce-rs persistent actor framework."
+license = "MIT"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+repository = "https://github.com/dmrolfs/coerce-cqrs-rs"
+keywords = ["actor", "cqrs", "events", "event_sourced"]
+categories = ["actor", "event", "cqrs"]
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+coerce-cqrs = { path = "../coerce-cqrs" }
+coerce = { version = "0.8.7", features = ["full",] }
+coerce-macros = "0.2.0"
+
+anyhow = "1.0.70"
+async-trait = "0.1.68"
+dashmap = "5.4.0"
+#delegate = "0.9.0"
+futures = "0.3.28"
+iso8601-timestamp = "0.2.10"
+once_cell = "1.17.1"
+#rand = "0.8.5"
+parking_lot = "0.12.1"
+pretty-type-name = "1.0.1"
+#metrics = "0.20.1"
+#metrics-exporter-prometheus = "0.11.0"
+#metrics-util = "0.14.0"
+#jwt = "0.16.0"
+#hmac = "0.12.1"
+rand = "0.8.5"
+secrecy = { version = "0.8.0", features = ["serde"] }
+serde = { version = "1.0.159", features = ["derive", "rc"] }
+serde_json = "1.0.95"
+#sha2 = "0.10.6"
+smol_str = "0.1.24"
+sql_query_builder = { version = "1.0.2", features = ["postgresql"] }
+sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-rustls"] }
+strum = "0.24.1"
+strum_macros = "0.24.3"
+tagid = { git = "https://github.com/dmrolfs/tagid-rs", features = ["envelope"] }
+thiserror = "1.0.40"
+tokio = { version = "1.27.0", features = ["full"] }
+tokio-stream = "0.1.12"
+tokio-util = { version = "0.7.7", features = ["full"] }
+tracing = { version = "0.1.37", features = ["valuable"] }
+tracing-subscriber = { version = "0.3.16", features = ["env-filter", "json"] }
+tracing-bunyan-formatter = "0.3.7"
+tracing-log = "0.1.3"
+uuid = { version = "1.3.0", features = ["serde", "v4"] }
+valuable = { version = "0.1.0", features = ["derive"] }
+
+#axum = { version = "0.6.8", features = ["query"] }
+#utoipa = { version = "3.0.3", features = ["axum_extras"] }
+#utoipa-swagger-ui = { version = "3.0.2", features = ["axum"] }
+
+[dev-dependencies]
+claim = { git = "https://github.com/dmrolfs/rust-claim", branch = "bump-autocfg-version" }
+pretty_assertions = "1.3.0"
+serde_test = "1.0.159"
+static_assertions = "1.1.0"
+tokio-test = "0.4.2"
