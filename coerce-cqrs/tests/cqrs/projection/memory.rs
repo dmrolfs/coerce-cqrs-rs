@@ -12,7 +12,7 @@ use coerce_cqrs::projection::{
     ProjectionId, ViewApplicator, ViewStorage,
 };
 use coerce_cqrs_test::fixtures::aggregate::{
-    self, Summarize, TestAggregate, TestCommand, TestEvent, TestView,
+    self, Summarize, TestAggregate, TestCommand, TestEvent, TestState, TestView,
 };
 use once_cell::sync::Lazy;
 use secrecy::Secret;
@@ -79,34 +79,35 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
             .await
     );
     tracing::info!("DMR: CMD - START");
-    assert_ok!(actor.notify(TestCommand::Start(
-        "tests starting now!... now... now".to_string()
-    )));
+
+    const DESCRIPTION: &str = "tests starting now!... now... now";
+
+    assert_ok!(actor.notify(TestCommand::Start(DESCRIPTION.to_string())));
 
     tracing::info!("DMR: CMD - TEST-1");
     assert_ok!(actor.notify(TestCommand::Test(1)));
-    let summary = assert_ok!(actor.send(Summarize).await);
-    assert_eq!(summary, 1);
+    let summary = assert_ok!(actor.send(Summarize::default()).await);
+    assert_eq!(summary, TestState::active(DESCRIPTION, vec![1]));
 
     tracing::info!("DMR: CMD - TEST-2");
     assert_ok!(actor.notify(TestCommand::Test(2)));
-    let summary = assert_ok!(actor.send(Summarize).await);
-    assert_eq!(summary, 3);
+    let summary = assert_ok!(actor.send(Summarize::default()).await);
+    assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2]));
 
     tracing::info!("DMR: CMD - TEST-3");
     assert_ok!(actor.notify(TestCommand::Test(3)));
-    let summary = assert_ok!(actor.send(Summarize).await);
-    assert_eq!(summary, 6);
+    let summary = assert_ok!(actor.send(Summarize::default()).await);
+    assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3,]));
 
     tracing::info!("DMR: CMD - TEST-5");
     assert_ok!(actor.notify(TestCommand::Test(5)));
-    let summary = assert_ok!(actor.send(Summarize).await);
-    assert_eq!(summary, 11);
+    let summary = assert_ok!(actor.send(Summarize::default()).await);
+    assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3, 5,]));
 
     tracing::info!("DMR: CMD - STOP");
     assert_ok!(actor.notify(TestCommand::Stop));
-    let summary = assert_ok!(actor.send(Summarize).await);
-    assert_eq!(summary, 11);
+    let summary = assert_ok!(actor.send(Summarize::default()).await);
+    assert_eq!(summary, TestState::completed(DESCRIPTION, vec![1, 2, 3, 5]));
 
     tracing::info!("DMR: STOP ACTOR");
     assert_ok!(actor.stop().await);

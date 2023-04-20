@@ -14,6 +14,8 @@ pub use processor::{
 use coerce::persistent::PersistentActor;
 use smol_str::SmolStr;
 use std::fmt;
+use tagid::{Entity, Id, IdGenerator};
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -74,6 +76,10 @@ impl PersistenceId {
         let aggregate_name = pretty_type_name::pretty_type_name::<A>();
         Self::from_parts(aggregate_name.as_str(), aggregate_id)
     }
+
+    pub fn as_persistence_id(&self) -> String {
+        format!("{self:#}") // delegate to alternate Display format
+    }
 }
 
 pub const PERSISTENCE_ID_DELIMITER: &str = "::";
@@ -95,6 +101,25 @@ impl fmt::Display for PersistenceId {
 impl From<PersistenceId> for StorageKey {
     fn from(pid: PersistenceId) -> Self {
         Self(pid.to_string().into())
+    }
+}
+
+impl<T: ?Sized> From<PersistenceId> for Id<T, String> {
+    fn from(pid: PersistenceId) -> Self {
+        Self::direct(pid.aggregate_name.as_str(), pid.id.to_string())
+    }
+}
+
+impl<T> From<Id<T, <<T as Entity>::IdGen as IdGenerator>::IdType>> for PersistenceId
+where
+    T: Entity + ?Sized,
+    <<T as Entity>::IdGen as IdGenerator>::IdType: ToString,
+{
+    fn from(id: Id<T, <<T as Entity>::IdGen as IdGenerator>::IdType>) -> Self {
+        Self {
+            aggregate_name: id.label,
+            id: SmolStr::new(id.id.to_string()),
+        }
     }
 }
 
@@ -154,8 +179,6 @@ pub trait EventProcessor<E> {
     async fn process(&self, event: EventEnvelope<E>) -> Result<(), Self::Error>;
 }
 
-use thiserror::Error;
-
 #[derive(Debug, Error)]
 pub enum ProjectionError {
     #[error("{0}")]
@@ -170,11 +193,6 @@ pub enum ProjectionError {
     #[error("{0}")]
     MessageUnwrap(#[from] coerce::actor::message::MessageUnwrapErr),
 
-    // #[error("{0}")]
-    // Processor(anyhow::Error),
-
-    // #[error("uninitialized field error: {0}")]
-    // UninitializedField(String),
     #[error("{0}")]
     JournalEntryPull(anyhow::Error),
 }

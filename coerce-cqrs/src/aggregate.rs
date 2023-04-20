@@ -1,19 +1,3 @@
-// #[async_trait]
-// pub trait Aggregate: Entity + PersistentActor {
-//     async fn
-// }
-//
-// #[async_trait]
-// impl<A> PersistentActor for A
-// where
-//     A: Aggregate,
-// {
-//     #[tracing::instrument(level = "debug", skip(journal))]
-//     fn configure(journal: &mut JournalTypes<Self>) {
-//         todo!()
-//     }
-// }
-
 use coerce::actor::context::ActorContext;
 use coerce::actor::message::Message;
 use serde::de::DeserializeOwned;
@@ -22,20 +6,22 @@ use std::error::Error;
 use std::fmt::{Debug, Display};
 use thiserror::Error;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub enum CommandResult<T>
 where
-    T: Debug,
+    T: Debug + PartialEq,
 {
     Ok(T),
     Rejected(String),
     Err(String),
 }
 
+impl<T> Eq for CommandResult<T> where T: Debug + PartialEq + Eq {}
+
 impl<T> CommandResult<T>
 where
-    T: Debug + Serialize + DeserializeOwned,
+    T: Debug + PartialEq + Serialize + DeserializeOwned,
 {
     pub const fn ok(payload: T) -> Self {
         Self::Ok(payload)
@@ -52,7 +38,7 @@ where
 
 impl<T, E> From<E> for CommandResult<T>
 where
-    T: Debug,
+    T: Debug + PartialEq,
     E: Error + Display,
 {
     fn from(error: E) -> Self {

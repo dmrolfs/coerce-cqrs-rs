@@ -1,9 +1,11 @@
 use coerce::actor::context::ActorContext;
 use coerce::actor::message::{Handler, Message};
+use coerce::actor::ActorRefErr;
 use coerce::persistent::types::JournalTypes;
 use coerce::persistent::{PersistentActor, Recover, RecoverSnapshot};
 use coerce_cqrs::{AggregateError, AggregateState, ApplyAggregateEvent, CommandResult};
 use std::fmt;
+use std::marker::PhantomData;
 use tagid::{CuidGenerator, Entity, Label};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,9 +46,40 @@ pub enum TestCommand {
     Stop,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, JsonMessage, Serialize, Deserialize)]
-#[result("i32")]
-pub struct Summarize;
+pub trait Summarizable {
+    type Summary: fmt::Debug + PartialEq + Send + Sync;
+    fn summarize(&self, ctx: &ActorContext) -> Self::Summary;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Summarize<A: Summarizable> {
+    _marker: PhantomData<A>,
+}
+
+impl<A: Summarizable> Default for Summarize<A> {
+    fn default() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<A: Summarizable + 'static> Message for Summarize<A> {
+    type Result = <A as Summarizable>::Summary;
+}
+
+#[allow(unsafe_code)]
+unsafe impl<A: Summarizable> Send for Summarize<A> {}
+
+#[allow(unsafe_code)]
+unsafe impl<A: Summarizable> Sync for Summarize<A> {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProvokeError;
+
+impl Message for ProvokeError {
+    type Result = Result<(), ActorRefErr>;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, JsonMessage, Serialize, Deserialize)]
 #[result("()")]
@@ -56,12 +89,12 @@ pub enum TestEvent {
     Stopped,
 }
 
-#[derive(Debug, PartialEq, JsonSnapshot, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, JsonSnapshot, Serialize, Deserialize)]
 pub struct TestAggregateSnapshot {
     pub state: TestState,
 }
 
-#[derive(Debug, Default, Clone, Label, PartialEq)]
+#[derive(Debug, Default, Clone, Label, PartialEq, Eq)]
 pub struct TestAggregate {
     state: TestState,
 }
@@ -80,6 +113,14 @@ impl fmt::Display for TestAggregate {
 
 impl Entity for TestAggregate {
     type IdGen = CuidGenerator;
+}
+
+impl Summarizable for TestAggregate {
+    type Summary = TestState;
+
+    fn summarize(&self, _ctx: &ActorContext) -> Self::Summary {
+        self.state.clone()
+    }
 }
 
 #[async_trait]
@@ -126,14 +167,36 @@ impl Handler<TestCommand> for TestAggregate {
 }
 
 #[async_trait]
-impl Handler<Summarize> for TestAggregate {
+impl Handler<Summarize<Self>> for TestAggregate {
     #[instrument(level = "debug", skip(_message, ctx))]
     async fn handle(
         &mut self,
-        _message: Summarize,
+        _message: Summarize<Self>,
         ctx: &mut ActorContext,
-    ) -> <Summarize as Message>::Result {
-        self.state.summarize(ctx)
+    ) -> <Summarize<Self> as Message>::Result {
+        self.summarize(ctx)
+    }
+}
+
+// #[async_trait]
+// impl<A: PersistentActor + Summarizable> Handler<Summarize<Self>> for A {
+//     #[instrument(level = "debug", skip(_msg, ctx))]
+//     async fn handle(&mut self, _msg: Summarize<A>, ctx: &mut ActorContext) -> <Summarize<A> as Message>::Result {
+//         self.summarize(ctx)
+//     }
+// }
+
+#[async_trait]
+impl Handler<ProvokeError> for TestAggregate {
+    #[instrument(level = "debug", skip(_message, _ctx))]
+    async fn handle(
+        &mut self,
+        _message: ProvokeError,
+        _ctx: &mut ActorContext,
+    ) -> <ProvokeError as Message>::Result {
+        Err(ActorRefErr::Timeout {
+            time_taken_millis: 1234,
+        })
     }
 }
 
@@ -166,7 +229,7 @@ impl RecoverSnapshot<TestAggregateSnapshot> for TestAggregate {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TestState {
     Quiescent(QuiescentState),
     Active(ActiveState),
@@ -174,6 +237,24 @@ pub enum TestState {
 }
 
 impl TestState {
+    pub const fn quiescent() -> Self {
+        Self::Quiescent(QuiescentState)
+    }
+
+    pub fn active(description: impl Into<String>, tests: Vec<i32>) -> Self {
+        Self::Active(ActiveState {
+            description: description.into(),
+            tests,
+        })
+    }
+
+    pub fn completed(description: impl Into<String>, tests: Vec<i32>) -> Self {
+        Self::Completed(CompletedState {
+            description: description.into(),
+            tests,
+        })
+    }
+
     pub fn summarize(&self, _ctx: &ActorContext) -> i32 {
         match self {
             Self::Quiescent(_) => 0,
@@ -214,7 +295,7 @@ impl Default for TestState {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuiescentState;
 
 impl AggregateState<TestCommand, TestEvent> for QuiescentState {
@@ -249,7 +330,7 @@ impl AggregateState<TestCommand, TestEvent> for QuiescentState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveState {
     pub description: String,
     pub tests: Vec<i32>,
@@ -298,7 +379,7 @@ impl AggregateState<TestCommand, TestEvent> for ActiveState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompletedState {
     pub description: String,
     pub tests: Vec<i32>,
@@ -335,5 +416,138 @@ impl AggregateState<TestCommand, TestEvent> for CompletedState {
             "completed TestAggregate does not recognize further events - ignored"
         );
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framework::TestFramework;
+    use tokio_test::block_on;
+
+    const DESCRIPTION: &str = "test starts now!";
+
+    #[test]
+    fn test_aggregate_start() {
+        block_on(async {
+            let validator = TestFramework::<TestAggregate, _>::default()
+                .with_memory_storage()
+                .given_no_previous_events()
+                .await
+                .when(TestCommand::Start(DESCRIPTION.to_string()))
+                .await;
+
+            validator.then_expect_reply(CommandResult::Ok("active:0".to_string()));
+            validator.then_expect_state_summary(TestState::Active(ActiveState::new(
+                DESCRIPTION.to_string(),
+            )));
+        })
+    }
+
+    #[test]
+    fn test_aggregate_zero_stop() {
+        block_on(async {
+            TestFramework::<TestAggregate, _>::default()
+                .with_memory_storage()
+                .given_no_previous_events()
+                .await
+                .when(TestCommand::Stop)
+                .await
+                .then_expect_reply(CommandResult::Rejected(
+                    "TestAggregate must be started before handling command: Stop".to_string(),
+                ))
+                .then_expect_state_summary(TestState::Quiescent(QuiescentState));
+        });
+    }
+
+    #[test]
+    fn test_aggregate_zero_test() {
+        block_on(async {
+            TestFramework::<TestAggregate, _>::default()
+                .with_memory_storage()
+                .given_no_previous_events()
+                .await
+                .when(TestCommand::Test(33))
+                .await
+                .then_expect_reply(CommandResult::Rejected(
+                    "TestAggregate must be started before handling command: Test(33)".to_string(),
+                ))
+                .then_expect_state_summary(TestState::Quiescent(QuiescentState));
+        });
+    }
+
+    #[test]
+    fn test_aggregate_happy_life() {
+        block_on(async {
+            TestFramework::<TestAggregate, _>::default()
+                .with_memory_storage()
+                .given(
+                    "tests-aggregate-event",
+                    vec![
+                        TestEvent::Started(DESCRIPTION.to_string()),
+                        TestEvent::Tested(1),
+                        TestEvent::Tested(2),
+                        TestEvent::Tested(3),
+                        TestEvent::Tested(5),
+                    ],
+                )
+                .await
+                .when(TestCommand::Stop)
+                .await
+                .then_expect_reply(CommandResult::Ok("completed:11".to_string()))
+                .then_expect_state_summary(TestState::Completed(CompletedState {
+                    description: DESCRIPTION.to_string(),
+                    tests: vec![1, 2, 3, 5],
+                }));
+        });
+    }
+
+    #[test]
+    fn test_aggregate_happy_summary() {
+        block_on(async {
+            TestFramework::<TestAggregate, _>::default()
+                .with_memory_storage()
+                .given(
+                    "tests-aggregate-event",
+                    vec![
+                        TestEvent::Started(DESCRIPTION.to_string()),
+                        TestEvent::Tested(1),
+                        TestEvent::Tested(2),
+                        TestEvent::Tested(3),
+                        TestEvent::Tested(5),
+                    ],
+                )
+                .await
+                .when(Summarize::<TestAggregate>::default())
+                .await
+                .then_expect_reply(TestState::Active(ActiveState {
+                    description: DESCRIPTION.to_string(),
+                    tests: vec![1, 2, 3, 5],
+                }));
+        });
+    }
+
+    #[test]
+    fn test_aggregate_happy_error() {
+        block_on(async {
+            TestFramework::<TestAggregate, _>::default()
+                .with_memory_storage()
+                .given(
+                    "tests-aggregate-event",
+                    vec![
+                        TestEvent::Started(DESCRIPTION.to_string()),
+                        TestEvent::Tested(1),
+                        TestEvent::Tested(2),
+                        TestEvent::Tested(3),
+                        TestEvent::Tested(5),
+                    ],
+                )
+                .await
+                .when(ProvokeError)
+                .await
+                .then_expect_reply(Err(ActorRefErr::Timeout {
+                    time_taken_millis: 1234,
+                }));
+        });
     }
 }

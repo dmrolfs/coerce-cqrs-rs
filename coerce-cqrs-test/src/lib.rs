@@ -22,4 +22,5 @@ extern crate serde;
 extern crate coerce_macros;
 
 pub mod fixtures;
+pub mod framework;
 pub mod setup_tracing;
