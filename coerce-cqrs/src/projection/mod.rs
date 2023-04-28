@@ -1,8 +1,10 @@
+mod commit_action;
 mod event_envelope;
 mod materialized;
 mod offset;
 mod processor;
 
+pub use commit_action::PostCommitAction;
 pub use event_envelope::EventEnvelope;
 pub use materialized::{InMemoryViewStorage, ViewApplicator, ViewContext, ViewId, ViewStorage};
 pub use offset::{InMemoryOffsetStorage, Offset, OffsetStorage, OffsetStorageRef};
@@ -98,12 +100,6 @@ impl fmt::Display for PersistenceId {
     }
 }
 
-impl From<PersistenceId> for StorageKey {
-    fn from(pid: PersistenceId) -> Self {
-        Self(pid.to_string().into())
-    }
-}
-
 impl<T: ?Sized> From<PersistenceId> for Id<T, String> {
     fn from(pid: PersistenceId) -> Self {
         Self::direct(pid.aggregate_name.as_str(), pid.id.to_string())
@@ -122,56 +118,6 @@ where
         }
     }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub struct StorageKey(SmolStr);
-
-impl fmt::Display for StorageKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl StorageKey {
-    pub fn new(id: impl AsRef<str>) -> Self {
-        Self(SmolStr::new(id.as_ref()))
-    }
-}
-
-impl From<String> for StorageKey {
-    fn from(id: String) -> Self {
-        Self::new(id)
-    }
-}
-
-impl From<&str> for StorageKey {
-    fn from(id: &str) -> Self {
-        Self::new(id)
-    }
-}
-
-impl From<SmolStr> for StorageKey {
-    fn from(id: SmolStr) -> Self {
-        Self::new(id.as_str())
-    }
-}
-
-impl AsRef<str> for StorageKey {
-    fn as_ref(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-// impl From<StorageKey> for PersistenceId {
-//     fn from(key: StorageKey) -> Self {
-//         let mut parts = key.as_ref().split(PERSISTENCE_ID_DELIMITER);
-//         let aggregate_name = SmolStr::new(parts.next().expect("aggregate name and id"));
-//         let id = SmolStr::new(parts.next().expect("aggregate id"));
-//         Self { aggregate_name, id }
-//     }
-// }
 
 #[async_trait]
 pub trait EventProcessor<E> {

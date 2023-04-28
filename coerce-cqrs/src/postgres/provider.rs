@@ -1,7 +1,7 @@
 use super::actor::{protocol, PostgresJournal};
 use crate::postgres::config::PostgresStorageConfig;
-use crate::postgres::CqrsError;
-use crate::projection::StorageKey;
+use crate::postgres::protocol::SequenceRange;
+use crate::postgres::{EntryType, PostgresStorageError, StorageKey};
 use coerce::actor::system::ActorSystem;
 use coerce::actor::{IntoActor, LocalActorRef};
 use coerce::persistent::journal::provider::StorageProvider;
@@ -10,11 +10,10 @@ use sqlx::PgPool;
 use std::fmt;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use strum_macros::{Display, EnumVariantNames, IntoStaticStr};
 use tokio::sync::oneshot;
 
 pub struct PostgresStorageProvider {
-    storage: JournalStorageRef,
+    postgres: JournalStorageRef,
 }
 
 impl PostgresStorageProvider {
@@ -22,47 +21,31 @@ impl PostgresStorageProvider {
     pub async fn connect(
         config: PostgresStorageConfig,
         system: &ActorSystem,
-    ) -> Result<Self, CqrsError> {
-        create_provider(config, system).await
-    }
-}
-
-#[instrument(level = "trace", skip(config, system))]
-async fn create_provider(
-    config: PostgresStorageConfig,
-    system: &ActorSystem,
-) -> Result<PostgresStorageProvider, CqrsError> {
-    let config = Arc::new(config);
-
-    static POSTGRES_JOURNAL_COUNTER: AtomicU32 = AtomicU32::new(1);
-    let connection_pool = connect_with(&config);
-    let journal = PostgresJournal::from_pool(connection_pool)
-        .into_actor(
-            Some(format!(
-                "postgres-journal-{}",
-                POSTGRES_JOURNAL_COUNTER.fetch_add(1, Ordering::Relaxed)
-            )),
-            system,
-        )
-        .await?;
-
-    let storage = Arc::new(PostgresJournalStorage {
-        journal,
-        config,
-        key_provider_fn: |pid, value_type, config| {
-            format!(
-                "{key_prefix}{pid}:{value_type}",
-                key_prefix = config.key_prefix
+    ) -> Result<Self, PostgresStorageError> {
+        static POSTGRES_JOURNAL_COUNTER: AtomicU32 = AtomicU32::new(1);
+        let connection_pool = connect_with(&config);
+        let postgres_journal = PostgresJournal::from_pool(connection_pool, &config)
+            .into_actor(
+                Some(format!(
+                    "postgres-journal-{}",
+                    POSTGRES_JOURNAL_COUNTER.fetch_add(1, Ordering::Relaxed)
+                )),
+                system,
             )
-            .into()
-        },
-    });
-    Ok(PostgresStorageProvider { storage })
+            .await?;
+
+        let storage = Arc::new(PostgresJournalStorage {
+            postgres_journal,
+            config,
+            key_provider_fn: crate::postgres::storage_key_provider,
+        });
+        Ok(Self { postgres: storage })
+    }
 }
 
 impl StorageProvider for PostgresStorageProvider {
     fn journal_storage(&self) -> Option<JournalStorageRef> {
-        Some(self.storage.clone())
+        Some(self.postgres.clone())
     }
 }
 
@@ -78,8 +61,8 @@ pub struct PostgresJournalStorage<K>
 where
     K: Fn(&str, &str, &PostgresStorageConfig) -> StorageKey,
 {
-    journal: LocalActorRef<PostgresJournal>,
-    config: Arc<PostgresStorageConfig>,
+    postgres_journal: LocalActorRef<PostgresJournal>,
+    config: PostgresStorageConfig,
     key_provider_fn: K,
 }
 
@@ -94,13 +77,6 @@ where
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Display, IntoStaticStr, EnumVariantNames)]
-#[strum(serialize_all = "lowercase", ascii_case_insensitive)]
-enum EntryType {
-    Journal,
-    Snapshot,
-}
-
 impl<K> PostgresJournalStorage<K>
 where
     K: Fn(&str, &str, &PostgresStorageConfig) -> StorageKey,
@@ -111,8 +87,7 @@ where
         entry: EntryType,
     ) -> ((oneshot::Sender<R>, oneshot::Receiver<R>), StorageKey) {
         let channel = oneshot::channel::<R>();
-        let storage_key =
-            (self.key_provider_fn)(persistence_id, entry.into(), self.config.as_ref());
+        let storage_key = (self.key_provider_fn)(persistence_id, entry.into(), &self.config);
         (channel, storage_key)
     }
 }
@@ -130,7 +105,7 @@ where
     ) -> anyhow::Result<()> {
         let ((result_channel, rx), storage_key) =
             self.result_channel_and_storage_key_for(persistence_id, EntryType::Snapshot);
-        self.journal.notify(protocol::WriteSnapshot {
+        self.postgres_journal.notify(protocol::WriteSnapshot {
             storage_key,
             entry,
             result_channel,
@@ -142,7 +117,7 @@ where
     async fn write_message(&self, persistence_id: &str, entry: JournalEntry) -> anyhow::Result<()> {
         let ((result_channel, rx), storage_key) =
             self.result_channel_and_storage_key_for(persistence_id, EntryType::Journal);
-        self.journal.notify(protocol::WriteMessage {
+        self.postgres_journal.notify(protocol::WriteMessage {
             storage_key,
             entry,
             result_channel,
@@ -158,7 +133,7 @@ where
     ) -> anyhow::Result<()> {
         let ((result_channel, rx), storage_key) =
             self.result_channel_and_storage_key_for(persistence_id, EntryType::Journal);
-        self.journal.notify(protocol::WriteMessages {
+        self.postgres_journal.notify(protocol::WriteMessages {
             storage_key,
             entries,
             result_channel,
@@ -173,7 +148,7 @@ where
     ) -> anyhow::Result<Option<JournalEntry>> {
         let ((result_channel, rx), storage_key) =
             self.result_channel_and_storage_key_for(persistence_id, EntryType::Snapshot);
-        self.journal.notify(protocol::ReadSnapshot {
+        self.postgres_journal.notify(protocol::ReadSnapshot {
             storage_key,
             result_channel,
         })?;
@@ -189,12 +164,13 @@ where
         let ((result_channel, rx), storage_key) =
             self.result_channel_and_storage_key_for(persistence_id, EntryType::Journal);
         info!(%persistence_id, %from_sequence, "DMR: READ_LATEST_MESSAGES...");
-        self.journal.notify(protocol::ReadMessages {
+
+        self.postgres_journal.notify(protocol::ReadMessages {
             storage_key,
-            from_sequence,
-            to_sequence: None,
+            sequence: SequenceRange::from_sequence(from_sequence),
             result_channel,
         })?;
+
         rx.await?
     }
 
@@ -206,12 +182,15 @@ where
     ) -> anyhow::Result<Option<JournalEntry>> {
         let ((result_channel, rx), storage_key) =
             self.result_channel_and_storage_key_for(persistence_id, EntryType::Journal);
-        self.journal.notify(protocol::ReadMessage {
+
+        self.postgres_journal.notify(protocol::ReadMessages {
             storage_key,
-            sequence_id,
+            sequence: SequenceRange::single(sequence_id),
             result_channel,
         })?;
-        rx.await?
+
+        let entries = rx.await?;
+        entries.map(|entries_0| entries_0.and_then(|es| es.into_iter().next()))
     }
 
     #[instrument(level = "debug", skip())]
@@ -223,12 +202,13 @@ where
     ) -> anyhow::Result<Option<Vec<JournalEntry>>> {
         let ((result_channel, rx), storage_key) =
             self.result_channel_and_storage_key_for(persistence_id, EntryType::Journal);
-        self.journal.notify(protocol::ReadMessages {
+
+        self.postgres_journal.notify(protocol::ReadMessages {
             storage_key,
-            from_sequence,
-            to_sequence: Some(to_sequence),
+            sequence: SequenceRange::for_exclusive_range(from_sequence..to_sequence),
             result_channel,
         })?;
+
         rx.await?
     }
 
@@ -239,11 +219,13 @@ where
     ) -> anyhow::Result<()> {
         let ((result_channel, rx), storage_key) =
             self.result_channel_and_storage_key_for(persistence_id, EntryType::Journal);
-        self.journal.notify(protocol::DeleteMessages {
+
+        self.postgres_journal.notify(protocol::DeleteMessages {
             storage_key,
-            to_sequence,
+            sequence: SequenceRange::for_exclusive_range(0..to_sequence),
             result_channel,
         })?;
+
         rx.await?
     }
 

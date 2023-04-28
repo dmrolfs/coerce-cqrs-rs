@@ -15,20 +15,8 @@ pub use processor::{
     protocol::{ProcessorApi, ProcessorCommand},
     Processor, ProcessorEngine,
 };
-// pub use processor::{Building, Running, Ready, };
 
 pub type ProcessorErrorHandler = dyn Fn(ProjectionError) + Send + Sync + 'static;
-
-// pub type JournalEntryHandler = dyn ProcessEntry;
-
-// pub type JournalEntryHandler = dyn FnMut(&JournalEntry) -> BoxFuture<Result<(), ProjectionError>>;
-
-// static FOO: Box<JournalEntryHandler> = Box::new(|entry| {
-//     Box::pin(async {
-//         info!("entry = {entry:?}");
-//         Ok(())
-//     })
-// });
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessorContext {

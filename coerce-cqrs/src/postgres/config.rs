@@ -10,6 +10,10 @@ pub struct PostgresStorageConfig {
     pub host: String,
     pub port: u16,
     pub database_name: String,
+    #[serde(default = "PostgresStorageConfig::default_event_journal_table")]
+    pub event_journal_table_name: String,
+    #[serde(default = "PostgresStorageConfig::default_snapshot_table")]
+    pub snapshot_table_name: String,
     pub require_ssl: bool,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -26,6 +30,14 @@ pub struct PostgresStorageConfig {
 }
 
 impl PostgresStorageConfig {
+    pub fn default_event_journal_table() -> String {
+        "event_journal".to_string()
+    }
+
+    pub fn default_snapshot_table() -> String {
+        "snapshots".to_string()
+    }
+
     #[allow(dead_code)]
     pub fn connection_string(&self) -> Secret<String> {
         let connection = format!(

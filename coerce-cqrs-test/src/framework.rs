@@ -250,8 +250,7 @@ where
         A: Handler<C>,
         C: Message,
     {
-        let result = when(self.actor, command).await;
-        result
+        when(self.actor, command).await
     }
 }
 

@@ -36,6 +36,8 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
         host: "localhost".to_string(),
         port: 5432,
         database_name: "test_database".to_string(),
+        event_journal_table_name: PostgresStorageConfig::default_event_journal_table(),
+        snapshot_table_name: PostgresStorageConfig::default_snapshot_table(),
         require_ssl: false,
         min_connections: None,
         max_connections: None,
