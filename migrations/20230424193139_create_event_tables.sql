@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.event_journal(
   PRIMARY KEY(persistence_id, sequence_number)
 );
 
-CREATE TABLE IF NOT EXISTS public.snapshot (
+CREATE TABLE IF NOT EXISTS public.snapshots (
   persistence_id TEXT NOT NULL,
   sequence_number BIGINT CHECK (sequence_number >= 0) NOT NULL,
   snapshot_manifest VARCHAR(255) NOT NULL,

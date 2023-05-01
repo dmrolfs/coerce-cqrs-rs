@@ -26,6 +26,9 @@ pub struct PostgresStorageConfig {
     pub max_lifetime: Option<Duration>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acquire_timeout: Option<Duration>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_timeout: Option<Duration>,
 }
 
@@ -57,6 +60,10 @@ impl PostgresStorageConfig {
         let mut options = PgPoolOptions::new()
             .max_lifetime(self.max_lifetime)
             .idle_timeout(self.idle_timeout);
+
+        if let Some(acquire) = self.acquire_timeout {
+            options = options.acquire_timeout(acquire);
+        }
 
         if let Some(min) = self.min_connections {
             options = options.min_connections(min);

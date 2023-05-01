@@ -1,5 +1,5 @@
 -- Add migration script here
-CREATE TABLE IF NOT EXISTS projection_offset_store (
+CREATE TABLE IF NOT EXISTS public.projection_offset_store (
   projection_name VARCHAR(255) NOT NULL,
   projection_key VARCHAR(255) NOT NULL,
   current_offset VARCHAR(255) NOT NULL,
@@ -9,9 +9,9 @@ CREATE TABLE IF NOT EXISTS projection_offset_store (
   PRIMARY KEY(projection_name, projection_key)
 );
 
-CREATE INDEX IF NOT EXISTS coerce_projection_name_index ON coerce_projection_offset_store (projection_name);
+CREATE INDEX IF NOT EXISTS projection_name_index ON projection_offset_store (projection_name);
 
---CREATE TABLE IF NOT EXISTS coerce_projection_management (
+--CREATE TABLE IF NOT EXISTS projection_management (
 --  projection_name VARCHAR(255) NOT NULL,
 --  projection_key VARCHAR(255) NOT NULL,
 --  paused BOOLEAN NOT NULL,

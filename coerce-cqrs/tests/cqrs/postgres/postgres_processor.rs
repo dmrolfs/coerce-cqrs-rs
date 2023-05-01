@@ -5,7 +5,7 @@ use coerce::actor::system::ActorSystem;
 use coerce::actor::IntoActor;
 use coerce::persistent::journal::provider::StorageProvider;
 use coerce::persistent::Persistence;
-use coerce_cqrs::memory::InMemoryStorageProvider;
+use coerce_cqrs::postgres::{PostgresStorageConfig, PostgresStorageProvider};
 use coerce_cqrs::projection::RegularInterval;
 use coerce_cqrs::projection::{
     InMemoryOffsetStorage, InMemoryViewStorage, OffsetStorage, PersistenceId, Processor,
@@ -20,31 +20,31 @@ use std::time::Duration;
 use tagid::Entity;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_memory_processor_config() -> anyhow::Result<()> {
+async fn test_postgres_processor_config() -> anyhow::Result<()> {
     Lazy::force(&coerce_cqrs_test::setup_tracing::TEST_TRACING);
-    let main_span = tracing::info_span!("view_memory_storage::test_load_and_save");
+    let main_span = tracing::info_span!("view_postgres_storage::test_load_and_save");
     let _main_span_guard = main_span.enter();
 
     let system = ActorSystem::new();
     let view_storage = Arc::new(InMemoryViewStorage::<TestView>::new("test_load_and_save"));
     let view_apply = ViewApplicator::new(view_storage.clone(), aggregate::apply_test_event_to_view);
-    // let storage_config = PostgresStorageConfig {
-    //     key_prefix: "".to_string(),
-    //     username: "test_user".to_string(),
-    //     password: Secret::new("test_password".to_string()),
-    //     host: "localhost".to_string(),
-    //     port: 5432,
-    //     database_name: "test_database".to_string(),
-    //     event_journal_table_name: PostgresStorageConfig::default_event_journal_table(),
-    //     snapshot_table_name: PostgresStorageConfig::default_snapshot_table(),
-    //     require_ssl: false,
-    //     min_connections: None,
-    //     max_connections: None,
-    //     max_lifetime: None,
-    //     idle_timeout: None,
-    // };
-    // let storage_provider = PostgresStorageProvider::connect(storage_config, &system).await?;
-    let storage_provider = InMemoryStorageProvider::new();
+    let storage_config = PostgresStorageConfig {
+        key_prefix: "".to_string(),
+        username: "postgres".to_string(),
+        password: secrecy::Secret::new("demo_pass".to_string()),
+        host: "localhost".to_string(),
+        port: 5432,
+        database_name: "demo_cqrs_db".to_string(),
+        event_journal_table_name: PostgresStorageConfig::default_event_journal_table(),
+        snapshot_table_name: PostgresStorageConfig::default_snapshot_table(),
+        require_ssl: false,
+        min_connections: None,
+        max_connections: None,
+        max_lifetime: None,
+        acquire_timeout: Some(Duration::from_secs(5)),
+        idle_timeout: None,
+    };
+    let storage_provider = PostgresStorageProvider::connect(storage_config, &system).await?;
     let storage = storage_provider
         .journal_storage()
         .ok_or_else(|| anyhow!("no journal storage!"))?;
@@ -56,12 +56,13 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
     let pid = PersistenceId::from_aggregate_id::<TestAggregate>(aid.id.as_str());
     let vid = view_storage.view_id_from_persistence(&pid);
 
+    let projection_id = ProjectionId::new("test_postgres_projection");
     let processor =
-        Processor::builder_for::<TestAggregate, _, _, _>("test_memory_projection", aid.id.as_str())
+        Processor::builder_for::<TestAggregate, _, _, _>(projection_id.clone(), aid.id.as_str())
             .with_entry_handler(view_apply)
             .with_source(storage.clone())
             .with_offset_storage(offset_storage.clone())
-            .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(50)));
+            .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(100)));
 
     let processor = assert_ok!(processor.finish());
     let processor = assert_ok!(processor.run());
@@ -115,7 +116,7 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
     assert_ok!(actor.stop().await);
 
     tracing::info!("DMR: SLEEP...");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     tracing::info!("DMR: WAKE");
 
     tracing::info!("DMR: LOAD VIEW...");
@@ -152,9 +153,7 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
 
     info!("DMR: EXAMINE OFFSET");
     let offset = assert_some!(assert_ok!(
-        offset_storage
-            .read_offset(&ProjectionId::new("test_memory_projection"), &pid)
-            .await
+        offset_storage.read_offset(&projection_id, &pid).await
     ));
     tracing::info!("DMR: after tests offset: {offset:?}");
     assert_eq!(offset.as_i64(), 6);

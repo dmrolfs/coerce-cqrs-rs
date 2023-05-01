@@ -54,15 +54,18 @@ pub type OffsetStorageRef = Arc<dyn OffsetStorage>;
 
 #[async_trait]
 pub trait OffsetStorage {
+    /// Returns the sequence number from which to start the next processor pull.
     async fn read_offset(
         &self,
         projection_id: &ProjectionId,
         persistence_id: &PersistenceId,
     ) -> Result<Option<Offset>, ProjectionError>;
+
+    /// Saves the sequence number from which to start the next processor pull.
     async fn save_offset(
         &self,
         projection_id: &ProjectionId,
-        peristence_id: &PersistenceId,
+        persistence_id: &PersistenceId,
         offset: Offset,
     ) -> Result<(), ProjectionError>;
 }
@@ -74,15 +77,20 @@ pub struct InMemoryOffsetStorage {
 
 #[async_trait]
 impl OffsetStorage for InMemoryOffsetStorage {
+    #[instrument(level = "debug")]
     async fn read_offset(
         &self,
         projection_id: &ProjectionId,
         persistence_id: &PersistenceId,
     ) -> Result<Option<Offset>, ProjectionError> {
         let key = (projection_id.clone(), persistence_id.clone());
-        Ok(self.inner.get(&key).map(|offset| *offset.value()))
+        let key_rep = format!("({}-{:#})", key.0, key.1);
+        let offset = Ok(self.inner.get(&key).map(|offset| *offset.value()));
+        debug!("DMR: read offset [{key_rep}] = {offset:?}");
+        offset
     }
 
+    #[instrument(level = "debug")]
     async fn save_offset(
         &self,
         projection_id: &ProjectionId,
@@ -90,7 +98,9 @@ impl OffsetStorage for InMemoryOffsetStorage {
         offset: Offset,
     ) -> Result<(), ProjectionError> {
         let key = (projection_id.clone(), persistence_id.clone());
-        let _prior_offset = self.inner.insert(key, offset);
+        let key_rep = format!("({}-{:#})", key.0, key.1);
+        let prior_offset = self.inner.insert(key, offset);
+        debug!("DMR: save offset [{key_rep}] = {offset:?} was {prior_offset:?}");
         Ok(())
     }
 }

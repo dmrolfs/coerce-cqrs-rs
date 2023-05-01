@@ -429,7 +429,7 @@ where
         entry: JournalEntry,
         ctx: &ProcessorContext,
     ) -> Result<Offset, ProjectionError> {
-        let sequence = entry.sequence;
+        let next_sequence = entry.sequence + 1;
 
         let payload_type = entry.payload_type.clone();
         if let Err(error) = self.inner.entry_handler.process_entry(entry, ctx).await {
@@ -438,7 +438,7 @@ where
                 .handle_error(error, payload_type.as_ref(), ctx)?;
         }
 
-        self.save_offset(sequence, ctx).await
+        self.save_offset(next_sequence, ctx).await
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -454,10 +454,10 @@ where
     #[instrument(level = "trace", skip(self))]
     async fn save_offset(
         &self,
-        sequence: i64,
+        entry_sequence: i64,
         ctx: &ProcessorContext,
     ) -> Result<Offset, ProjectionError> {
-        let offset = Offset::new(sequence);
+        let offset = Offset::new(entry_sequence);
         self.inner
             .offset_storage
             .save_offset(&ctx.projection_id, &ctx.persistence_id, offset)
