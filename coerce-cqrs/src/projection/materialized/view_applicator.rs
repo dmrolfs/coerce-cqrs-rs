@@ -77,13 +77,8 @@ where
             .load_view(&view_id)
             .await?
             .unwrap_or_default();
-        // let (view, _view_ctx) = self
-        //     .view_storage
-        //     .load_view_with_context(&view_id)
-        //     .await?
-        //     .unwrap_or_else(|| (S::View::default(), self.view_storage.context()));
         let updated_view = (self.processor)(view, event);
-        self.view_storage.save_view(view_id, updated_view).await?;
+        self.view_storage.save_view(&view_id, updated_view).await?;
         Ok(())
     }
 }

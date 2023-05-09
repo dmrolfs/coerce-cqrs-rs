@@ -1,5 +1,4 @@
-use super::{ViewContext, ViewId};
-use crate::projection::{PersistenceId, ProjectionError};
+use crate::projection::{PersistenceId, ProjectionError, ProjectionId};
 
 #[async_trait]
 pub trait ViewStorage {
@@ -7,27 +6,14 @@ pub trait ViewStorage {
 
     fn view_name(&self) -> &str;
 
-    fn version(&self) -> i64;
-
-    fn view_id_from_persistence(&self, pid: &PersistenceId) -> ViewId {
-        ViewId::new(pid.id.as_str())
-    }
-
-    fn context(&self) -> ViewContext {
-        ViewContext::new(self.view_name(), self.version())
+    fn view_id_from_persistence(&self, pid: &PersistenceId) -> ProjectionId {
+        ProjectionId::new(pid.id.as_str())
     }
 
     /// returns the current view instance
-    async fn load_view(&self, id: &ViewId) -> Result<Option<Self::View>, ProjectionError>;
-
-    /// returns the current view instance and context, used by `GenericViewProcessor` to update
-    /// views with committed events.
-    async fn load_view_with_context(
-        &self,
-        id: &ViewId,
-    ) -> Result<Option<(Self::View, ViewContext)>, ProjectionError>;
+    async fn load_view(&self, view_id: &ProjectionId) -> Result<Option<Self::View>, ProjectionError>;
 
     /// saves the view instance for the context, used by the `GenericViewProcessor` to record
     /// views updated by committed events.
-    async fn save_view(&self, view_id: ViewId, view: Self::View) -> Result<(), ProjectionError>;
+    async fn save_view(&self, view_id: &ProjectionId, view: Self::View) -> Result<(), ProjectionError>;
 }

@@ -6,10 +6,9 @@ use coerce::actor::message::{Handler, Message};
 use coerce::actor::Actor;
 use coerce::persistent::journal::storage::JournalEntry;
 use protocol::*;
-use sqlx::postgres::PgRow;
+use sqlx::postgres::{PgQueryResult, PgRow};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::sync::Arc;
-use tokio::sync::oneshot;
 use valuable::Valuable;
 
 pub mod protocol {
@@ -17,10 +16,19 @@ pub mod protocol {
     use crate::postgres::{PostgresStorageError, StorageKey};
 
     #[derive(Debug)]
+    pub struct ReadMessages {
+        pub storage_key: StorageKey,
+        pub sequence: SequenceRange,
+    }
+
+    impl Message for ReadMessages {
+        type Result = Result<Option<Vec<JournalEntry>>, PostgresStorageError>;
+    }
+
+    #[derive(Debug)]
     pub struct WriteMessage {
         pub storage_key: StorageKey,
         pub entry: JournalEntry,
-        pub result_channel: oneshot::Sender<anyhow::Result<()>>,
     }
 
     impl Message for WriteMessage {
@@ -31,7 +39,6 @@ pub mod protocol {
     pub struct WriteMessages {
         pub storage_key: StorageKey,
         pub entries: Vec<JournalEntry>,
-        pub result_channel: oneshot::Sender<anyhow::Result<()>>,
     }
 
     impl Message for WriteMessages {
@@ -42,7 +49,6 @@ pub mod protocol {
     pub struct WriteSnapshot {
         pub storage_key: StorageKey,
         pub entry: JournalEntry,
-        pub result_channel: oneshot::Sender<anyhow::Result<()>>,
     }
 
     impl Message for WriteSnapshot {
@@ -52,11 +58,10 @@ pub mod protocol {
     #[derive(Debug)]
     pub struct ReadSnapshot {
         pub storage_key: StorageKey,
-        pub result_channel: oneshot::Sender<anyhow::Result<Option<JournalEntry>>>,
     }
 
     impl Message for ReadSnapshot {
-        type Result = Result<(), PostgresStorageError>;
+        type Result = Result<Option<JournalEntry>, PostgresStorageError>;
     }
 
     #[derive(Debug, PartialEq, Eq)]
@@ -82,35 +87,10 @@ pub mod protocol {
         }
     }
 
-    // #[derive(Debug)]
-    // pub struct ReadMessage {
-    //     pub storage_key: StorageKey,
-    //     pub sequence_id: i64,
-    //     pub result_channel: oneshot::Sender<anyhow::Result<Option<JournalEntry>>>,
-    // }
-    //
-    // impl Message for ReadMessage {
-    //     type Result = Result<(), PostgresStorageError>;
-    // }
-
-    #[derive(Debug)]
-    pub struct ReadMessages {
-        pub storage_key: StorageKey,
-        pub sequence: SequenceRange,
-        // pub from_sequence: i64,
-        // pub to_sequence: Option<i64>,
-        pub result_channel: oneshot::Sender<anyhow::Result<Option<Vec<JournalEntry>>>>,
-    }
-
-    impl Message for ReadMessages {
-        type Result = Result<(), PostgresStorageError>;
-    }
-
     #[derive(Debug)]
     pub struct DeleteMessages {
         pub storage_key: StorageKey,
         pub sequence: SequenceRange,
-        pub result_channel: oneshot::Sender<anyhow::Result<()>>,
     }
 
     impl Message for DeleteMessages {
@@ -173,25 +153,34 @@ fn created_at() -> i64 {
 const EMPTY_META: serde_json::Value = serde_json::Value::Null;
 
 impl PostgresJournal {
-    #[instrument(level = "debug", skip(tx, ctx), fields(ctx=ctx.log().as_value()))]
+    #[instrument(
+        level = "debug",
+        skip(tx, ctx),
+        fields(ctx=ctx.log().as_value())
+    )]
     async fn persist_message(
         &self,
         persistence_id: &str,
         entry: JournalEntry,
         tx: &mut Transaction<'_, Postgres>,
         ctx: &mut ActorContext,
-    ) -> Result<(), PostgresStorageError> {
-        let _query_result = sqlx::query(self.sql_query.append_event())
+    ) -> Result<PgQueryResult, PostgresStorageError> {
+        let query = sqlx::query(self.sql_query.append_event())
             .bind(persistence_id) // persistence_id
             .bind(entry.sequence) // sequence_number
             .bind(false) // is_deleted
             .bind(entry.payload_type.as_ref()) // event_manifest
             .bind(entry.bytes.to_vec()) // event_payload
             .bind(EMPTY_META.clone()) // meta_payload
-            .bind(created_at()) // created_at
-            .execute(tx)
-            .await?;
-        Ok(())
+            .bind(created_at()); // created_at
+
+        let query_result = query.execute(tx).await.map_err(|err| err.into());
+        match &query_result {
+            Ok(result) => debug!("postgres journal persist message result: {result:?}"),
+            Err(error) => error!("postgres journal failed to persist message: {error:?}"),
+        }
+
+        query_result
     }
 }
 
@@ -203,11 +192,18 @@ impl Handler<WriteMessage> for PostgresJournal {
         message: WriteMessage,
         ctx: &mut ActorContext,
     ) -> Result<(), PostgresStorageError> {
+        let storage_key = message.storage_key.as_ref();
+
         let mut tx = sqlx::Acquire::begin(&self.pool).await?;
-        self.persist_message(message.storage_key.as_ref(), message.entry, &mut tx, ctx)
+        let _ = self
+            .persist_message(message.storage_key.as_ref(), message.entry, &mut tx, ctx)
             .await?;
-        let result = tx.commit().await.map_err(|err| err.into());
-        let _ = message.result_channel.send(result);
+
+        if let Err(error) = tx.commit().await {
+            error!(%storage_key, "Postgres journal failed to commit event persist message transaction: {error:?}");
+            return Err(error.into());
+        }
+
         Ok(())
     }
 }
@@ -220,14 +216,20 @@ impl Handler<WriteMessages> for PostgresJournal {
         message: WriteMessages,
         ctx: &mut ActorContext,
     ) -> Result<(), PostgresStorageError> {
-        let persistence_id = message.storage_key.as_ref();
+        let storage_key = message.storage_key.as_ref();
+
         let mut tx = sqlx::Acquire::begin(&self.pool).await?;
         for entry in message.entries {
-            self.persist_message(persistence_id, entry, &mut tx, ctx)
+            let _ = self
+                .persist_message(storage_key, entry, &mut tx, ctx)
                 .await?;
         }
-        let result = tx.commit().await.map_err(|err| err.into());
-        let _ = message.result_channel.send(result);
+
+        if let Err(error) = tx.commit().await {
+            error!(%storage_key, "Postgres journal failed to commit event persist messages transaction: {error:?}");
+            return Err(error.into());
+        }
+
         Ok(())
     }
 }
@@ -240,9 +242,11 @@ impl Handler<WriteSnapshot> for PostgresJournal {
         message: WriteSnapshot,
         ctx: &mut ActorContext,
     ) -> Result<(), PostgresStorageError> {
+        let storage_key = message.storage_key.as_ref();
+
         let mut tx = sqlx::Acquire::begin(&self.pool).await?;
-        let _query_result = sqlx::query(self.sql_query.insert_snapshot())
-            .bind(message.storage_key.as_ref()) // persistence_id
+        let _ = sqlx::query(self.sql_query.insert_snapshot())
+            .bind(storage_key) // persistence_id
             .bind(message.entry.sequence) // sequence_number
             .bind(message.entry.payload_type.as_ref()) // snapshot_manifest
             .bind(message.entry.bytes.to_vec()) // snapshot_payload
@@ -250,8 +254,12 @@ impl Handler<WriteSnapshot> for PostgresJournal {
             .bind(created_at()) // created_at
             .execute(&mut tx)
             .await?;
-        let result = tx.commit().await.map_err(|err| err.into());
-        let _ = message.result_channel.send(result);
+
+        if let Err(error) = tx.commit().await {
+            error!(%storage_key, "postgres journal failed to commit event deletion transaction: {error:?}");
+            return Err(error.into());
+        }
+
         Ok(())
     }
 }
@@ -282,8 +290,8 @@ impl Handler<ReadSnapshot> for PostgresJournal {
         &mut self,
         message: ReadSnapshot,
         ctx: &mut ActorContext,
-    ) -> Result<(), PostgresStorageError> {
-        let result = sqlx::query(self.sql_query.select_snapshot())
+    ) -> Result<Option<JournalEntry>, PostgresStorageError> {
+        sqlx::query(self.sql_query.select_snapshot())
             .bind(message.storage_key.as_ref())
             .fetch_optional(&self.pool)
             .await
@@ -296,30 +304,9 @@ impl Handler<ReadSnapshot> for PostgresJournal {
                         self.sql_query.snapshot_payload_column(),
                     )
                 })
-            });
-
-        let _ = message.result_channel.send(result);
-        Ok(())
+            })
     }
 }
-
-// #[async_trait]
-// impl Handler<ReadMessage> for PostgresJournal {
-//     #[instrument(level = "debug", skip(_ctx))]
-//     async fn handle(&mut self, message: ReadMessage, _ctx: &mut ActorContext) -> Result<(), PostgresStorageError> {
-//         let result = sqlx::query(self.sql_query.select_event())
-//             .bind(message.storage_key.as_ref())
-//             .bind(message.sequence_id)
-//             .fetch_optional(&self.pool)
-//             .await
-//             .map_err(|err| err.into())
-//             .map(|row| row.map(|r| self.entry_from_row(r, self.sql_query.event_manifest_column(), self.sql_query.event_payload_column())))
-//         ;
-//
-//         let _ = message.result_channel.send(result);
-//         Ok(())
-//     }
-// }
 
 #[async_trait]
 impl Handler<ReadMessages> for PostgresJournal {
@@ -328,7 +315,7 @@ impl Handler<ReadMessages> for PostgresJournal {
         &mut self,
         message: ReadMessages,
         ctx: &mut ActorContext,
-    ) -> Result<(), PostgresStorageError> {
+    ) -> Result<Option<Vec<JournalEntry>>, PostgresStorageError> {
         let persistence_id = message.storage_key.as_ref();
 
         let query = match message.sequence {
@@ -354,7 +341,7 @@ impl Handler<ReadMessages> for PostgresJournal {
                 .bind(0),
         };
 
-        let result = query
+        query
             .fetch_all(&self.pool)
             .await
             .map_err(|err| err.into())
@@ -371,10 +358,7 @@ impl Handler<ReadMessages> for PostgresJournal {
                     .collect();
 
                 Some(entries)
-            });
-
-        let _ = message.result_channel.send(result);
-        Ok(())
+            })
     }
 }
 
@@ -386,36 +370,39 @@ impl Handler<DeleteMessages> for PostgresJournal {
         message: DeleteMessages,
         ctx: &mut ActorContext,
     ) -> Result<(), PostgresStorageError> {
-        let persistence_id = message.storage_key.as_ref();
+        let storage_key = message.storage_key.as_ref();
 
         let mut tx = sqlx::Acquire::begin(&self.pool).await?;
         let query = match message.sequence {
             SequenceRange::Single(sequence) => sqlx::query(self.sql_query.delete_event())
-                .bind(persistence_id)
+                .bind(storage_key)
                 .bind(sequence),
 
             SequenceRange::From(from_sequence) => {
                 sqlx::query(self.sql_query.delete_latest_events())
-                    .bind(persistence_id)
+                    .bind(storage_key)
                     .bind(from_sequence)
             }
 
             SequenceRange::Exclusive(sequence_range) => {
                 sqlx::query(self.sql_query.delete_events_range())
-                    .bind(persistence_id)
+                    .bind(storage_key)
                     .bind(sequence_range.start)
                     .bind(sequence_range.end)
             }
 
             SequenceRange::All => sqlx::query(self.sql_query.delete_latest_events())
-                .bind(persistence_id)
+                .bind(storage_key)
                 .bind(0),
         };
 
-        let _query_result = query.execute(&mut tx).await?;
-        let result = tx.commit().await.map_err(|err| err.into());
+        let _ = query.execute(&mut tx).await?;
 
-        let _ = message.result_channel.send(result);
+        if let Err(error) = tx.commit().await {
+            error!(%storage_key, "postgres journal failed to commit delete messages transaction: {error:?}");
+            return Err(error.into());
+        }
+
         Ok(())
     }
 }
@@ -430,13 +417,11 @@ impl Handler<DeleteAll> for PostgresJournal {
     ) -> Result<(), PostgresStorageError> {
         // let mut results = Vec::with_capacity(message.0.len());
         for storage_key in message.0 {
-            let (cmd_tx, _) = oneshot::channel();
             let cmd = DeleteMessages {
                 storage_key,
                 sequence: SequenceRange::All,
-                result_channel: cmd_tx,
             };
-            ctx.actor_ref::<Self>().notify(cmd)?;
+            ctx.actor_ref::<Self>().send(cmd).await??;
             // let handle = tokio::spawn(async move { s.delete_all(storage_key.as_ref()).await });
             // results.push(handle);
         }

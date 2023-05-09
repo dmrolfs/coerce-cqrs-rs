@@ -11,19 +11,36 @@ const EVENT_PAYLOAD_COL: &str = "event_payload";
 const SNAPSHOT_MANIFEST_COL: &str = "snapshot_manifest";
 const SNAPSHOT_PAYLOAD_COL: &str = "snapshot_payload";
 
-const EVENT_COLUMNS: &str = "persistence_id, sequence_number, is_deleted, event_manifest, event_payload, meta_payload, created_at";
-static EVENT_VALUES: Lazy<String> = Lazy::new(|| {
-    let nr_columns = EVENT_COLUMNS.split(',').count();
-    let values = (1..=nr_columns)
+const EVENT_COLUMNS: [&str; 7] = [
+    PERSISTENCE_ID_COL,
+    SEQUENCE_NR_COL,
+    "is_deleted",
+    EVENT_MANIFEST_COL,
+    EVENT_PAYLOAD_COL,
+    "meta_payload",
+    "created_at",
+];
+
+static EVENT_COLUMNS_REP: Lazy<String> = Lazy::new(|| EVENT_COLUMNS.join(", "));
+static EVENT_VALUES_REP: Lazy<String> = Lazy::new(|| {
+    let values = (1..=EVENT_COLUMNS.len())
         .map(|i| format!("${i}"))
         .collect::<Vec<_>>()
         .join(", ");
     format!("( {values} )")
 });
-const SNAPSHOTS_COLUMNS: &str = "persistence_id, sequence_number, snapshot_manifest, snapshot_payload, meta_payload, created_at";
-static SNAPSHOTS_VALUES: Lazy<String> = Lazy::new(|| {
-    let nr_columns = SNAPSHOTS_COLUMNS.split(',').count();
-    let values = (1..=nr_columns)
+
+const SNAPSHOTS_COLUMNS: [&str; 6] = [
+    PERSISTENCE_ID_COL,
+    SEQUENCE_NR_COL,
+    SNAPSHOT_MANIFEST_COL,
+    SNAPSHOT_PAYLOAD_COL,
+    "meta_payload",
+    "created_at",
+];
+static SNAPSHOTS_COLUMNS_REP: Lazy<String> = Lazy::new(|| SNAPSHOTS_COLUMNS.join(", "));
+static SNAPSHOTS_VALUES_REP: Lazy<String> = Lazy::new(|| {
+    let values = (1..=SNAPSHOTS_COLUMNS.len())
         .map(|i| format!("${i}"))
         .collect::<Vec<_>>()
         .join(", ");
@@ -193,7 +210,7 @@ impl SqlQueryFactory {
     pub fn select_event(&self) -> &str {
         self.select_event.get_or_init(|| {
             sql::Select::new()
-                .select(EVENT_COLUMNS)
+                .select(&EVENT_COLUMNS_REP)
                 .from(self.event_journal_table())
                 .where_clause(self.where_persistence_id())
                 .and(format!("{} = $2", self.sequence_number_column()).as_str())
@@ -208,7 +225,7 @@ impl SqlQueryFactory {
             let sequence_nr_col = self.sequence_number_column();
 
             sql::Select::new()
-                .select(EVENT_COLUMNS)
+                .select(&EVENT_COLUMNS_REP)
                 .from(self.event_journal_table())
                 .where_clause(self.where_persistence_id())
                 .and("is_deleted = FALSE")
@@ -225,7 +242,7 @@ impl SqlQueryFactory {
             let sequence_nr_col = self.sequence_number_column();
 
             sql::Select::new()
-                .select(EVENT_COLUMNS)
+                .select(&EVENT_COLUMNS_REP)
                 .from(self.event_journal_table())
                 .where_clause(self.where_persistence_id())
                 .and("is_deleted = FALSE")
@@ -239,8 +256,15 @@ impl SqlQueryFactory {
     pub fn append_event(&self) -> &str {
         self.append_event.get_or_init(|| {
             sql::Insert::new()
-                .insert_into(format!("{} ( {EVENT_COLUMNS} )", self.event_journal_table()).as_str())
-                .values(EVENT_VALUES.as_str())
+                .insert_into(
+                    format!(
+                        "{} ( {} )",
+                        self.event_journal_table(),
+                        EVENT_COLUMNS_REP.as_str(),
+                    )
+                    .as_str(),
+                )
+                .values(EVENT_VALUES_REP.as_str())
                 .to_string()
         })
     }
@@ -288,7 +312,7 @@ impl SqlQueryFactory {
     pub fn select_snapshot(&self) -> &str {
         self.select_snapshot.get_or_init(|| {
             sql::Select::new()
-                .select(SNAPSHOTS_COLUMNS)
+                .select(&SNAPSHOTS_COLUMNS_REP)
                 .from(self.snapshots_table())
                 .where_clause(self.where_persistence_id())
                 .to_string()
@@ -299,8 +323,15 @@ impl SqlQueryFactory {
     pub fn insert_snapshot(&self) -> &str {
         self.insert_snapshot.get_or_init(|| {
             sql::Insert::new()
-                .insert_into(format!("{} ( {SNAPSHOTS_COLUMNS} )", self.snapshots_table()).as_str())
-                .values(SNAPSHOTS_VALUES.as_str())
+                .insert_into(
+                    format!(
+                        "{} ( {} )",
+                        SNAPSHOTS_COLUMNS_REP.as_str(),
+                        self.snapshots_table()
+                    )
+                    .as_str(),
+                )
+                .values(SNAPSHOTS_VALUES_REP.as_str())
                 .to_string()
         })
     }

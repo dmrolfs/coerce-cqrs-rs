@@ -6,7 +6,7 @@ mod processor;
 
 pub use commit_action::PostCommitAction;
 pub use event_envelope::EventEnvelope;
-pub use materialized::{InMemoryViewStorage, ViewApplicator, ViewContext, ViewId, ViewStorage};
+pub use materialized::{InMemoryViewStorage, ViewApplicator, ViewStorage};
 pub use offset::{InMemoryOffsetStorage, Offset, OffsetStorage, OffsetStorageRef};
 pub use processor::{
     CalculateInterval, CalculateIntervalFactory, ExponentialBackoff, Processor, ProcessorApi,
@@ -18,47 +18,6 @@ use smol_str::SmolStr;
 use std::fmt;
 use tagid::{Entity, Id, IdGenerator};
 use thiserror::Error;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub struct ProjectionId(SmolStr);
-
-impl fmt::Display for ProjectionId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl ProjectionId {
-    pub fn new(id: impl AsRef<str>) -> Self {
-        Self(SmolStr::new(id.as_ref()))
-    }
-}
-
-impl From<String> for ProjectionId {
-    fn from(id: String) -> Self {
-        Self::new(id)
-    }
-}
-
-impl From<&str> for ProjectionId {
-    fn from(id: &str) -> Self {
-        Self::new(id)
-    }
-}
-
-impl From<SmolStr> for ProjectionId {
-    fn from(id: SmolStr) -> Self {
-        Self::new(id.as_str())
-    }
-}
-
-impl AsRef<str> for ProjectionId {
-    fn as_ref(&self) -> &str {
-        self.0.as_str()
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PersistenceId {
@@ -107,9 +66,9 @@ impl<T: ?Sized> From<PersistenceId> for Id<T, String> {
 }
 
 impl<T> From<Id<T, <<T as Entity>::IdGen as IdGenerator>::IdType>> for PersistenceId
-where
-    T: Entity + ?Sized,
-    <<T as Entity>::IdGen as IdGenerator>::IdType: ToString,
+    where
+        T: Entity + ?Sized,
+        <<T as Entity>::IdGen as IdGenerator>::IdType: ToString,
 {
     fn from(id: Id<T, <<T as Entity>::IdGen as IdGenerator>::IdType>) -> Self {
         Self {
@@ -118,6 +77,91 @@ where
         }
     }
 }
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct ProjectionName(SmolStr);
+
+impl fmt::Display for ProjectionName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl ProjectionName {
+    pub fn new(name: impl AsRef<str>) -> Self {
+        Self(SmolStr::new(name.as_ref()))
+    }
+}
+
+impl From<String> for ProjectionName {
+    fn from(name: String) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<&str> for ProjectionName {
+    fn from(name: &str) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<SmolStr> for ProjectionName {
+    fn from(name: SmolStr) -> Self {
+        Self::new(name.as_str())
+    }
+}
+
+impl AsRef<str> for ProjectionName {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct ProjectionId(SmolStr);
+
+impl fmt::Display for ProjectionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl ProjectionId {
+    pub fn new(id: impl AsRef<str>) -> Self {
+        Self(SmolStr::new(id.as_ref()))
+    }
+}
+
+impl From<String> for ProjectionId {
+    fn from(id: String) -> Self {
+        Self::new(id)
+    }
+}
+
+impl From<&str> for ProjectionId {
+    fn from(id: &str) -> Self {
+        Self::new(id)
+    }
+}
+
+impl From<SmolStr> for ProjectionId {
+    fn from(id: SmolStr) -> Self {
+        Self::new(id.as_str())
+    }
+}
+
+impl AsRef<str> for ProjectionId {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
 
 #[async_trait]
 pub trait EventProcessor<E> {
@@ -131,7 +175,10 @@ pub enum ProjectionError {
     Sql(#[from] sqlx::Error),
 
     #[error("{0}")]
-    Json(#[from] serde_json::Error),
+    Decode(#[from] bincode::error::DecodeError),
+
+    #[error("{0}")]
+    Encode(#[from] bincode::error::EncodeError),
 
     #[error("{0}")]
     TaskJoin(#[from] tokio::task::JoinError),
@@ -140,5 +187,5 @@ pub enum ProjectionError {
     MessageUnwrap(#[from] coerce::actor::message::MessageUnwrapErr),
 
     #[error("{0}")]
-    JournalEntryPull(anyhow::Error),
+    Storage(anyhow::Error),
 }

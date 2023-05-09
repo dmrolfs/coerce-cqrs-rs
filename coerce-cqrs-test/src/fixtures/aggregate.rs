@@ -8,7 +8,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use tagid::{CuidGenerator, Entity, Label};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestView {
     pub label: String,
     pub sum: i32,
@@ -24,17 +24,29 @@ impl Default for TestView {
 }
 
 #[allow(dead_code, clippy::missing_const_for_fn)]
+#[instrument(level = "debug")]
 pub fn apply_test_event_to_view(mut view: TestView, event: TestEvent) -> TestView {
     match event {
         TestEvent::Started(label) => {
+            debug!("DMR: VIEW: updating label: {label}");
             view.label = label;
         }
+
         TestEvent::Tested(value) => {
-            view.sum += value;
+            let old_sum = view.sum;
+            view.sum = view.sum + value;
+            debug!(
+                "DMR: VIEW: updating sum: {old_sum} + {value} = {new_sum}",
+                new_sum = view.sum
+            );
         }
-        TestEvent::Stopped => {}
+
+        TestEvent::Stopped => {
+            debug!("DMR: VIEW: stopped event -- no view update");
+        }
     }
 
+    debug!(new_view=?view, "DMR: VIEW: view updated!");
     view
 }
 

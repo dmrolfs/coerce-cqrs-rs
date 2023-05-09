@@ -28,22 +28,6 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
     let system = ActorSystem::new();
     let view_storage = Arc::new(InMemoryViewStorage::<TestView>::new("test_load_and_save"));
     let view_apply = ViewApplicator::new(view_storage.clone(), aggregate::apply_test_event_to_view);
-    // let storage_config = PostgresStorageConfig {
-    //     key_prefix: "".to_string(),
-    //     username: "test_user".to_string(),
-    //     password: Secret::new("test_password".to_string()),
-    //     host: "localhost".to_string(),
-    //     port: 5432,
-    //     database_name: "test_database".to_string(),
-    //     event_journal_table_name: PostgresStorageConfig::default_event_journal_table(),
-    //     snapshot_table_name: PostgresStorageConfig::default_snapshot_table(),
-    //     require_ssl: false,
-    //     min_connections: None,
-    //     max_connections: None,
-    //     max_lifetime: None,
-    //     idle_timeout: None,
-    // };
-    // let storage_provider = PostgresStorageProvider::connect(storage_config, &system).await?;
     let storage_provider = InMemoryStorageProvider::new();
     let storage = storage_provider
         .journal_storage()

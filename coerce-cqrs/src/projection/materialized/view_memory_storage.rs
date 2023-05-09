@@ -1,7 +1,7 @@
 use crate::projection::materialized::view_storage::ViewStorage;
-use crate::projection::materialized::{ViewContext, ViewId};
-use crate::projection::ProjectionError;
+use crate::projection::{ProjectionError, ProjectionId};
 use parking_lot::RwLock;
+use smol_str::SmolStr;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -9,19 +9,15 @@ use std::marker::PhantomData;
 /// A memory-backed view storage for use in a `GenericViewProcessor`.
 #[derive(Debug)]
 pub struct InMemoryViewStorage<V> {
-    context: ViewContext,
-    store: RwLock<HashMap<ViewId, V>>,
+    view_name: SmolStr,
+    store: RwLock<HashMap<ProjectionId, V>>,
     _marker: PhantomData<V>,
 }
 
 impl<V> InMemoryViewStorage<V> {
     pub fn new(view_name: impl AsRef<str>) -> Self {
-        Self::new_with_version(view_name, 1)
-    }
-
-    pub fn new_with_version(view_name: impl AsRef<str>, version: i64) -> Self {
         Self {
-            context: ViewContext::new(view_name, version),
+            view_name: SmolStr::new(view_name),
             store: RwLock::new(HashMap::new()),
             _marker: PhantomData,
         }
@@ -36,33 +32,19 @@ where
     type View = V;
 
     fn view_name(&self) -> &str {
-        self.context.view_name.as_str()
+        self.view_name.as_str()
     }
 
-    fn version(&self) -> i64 {
-        self.context.version
-    }
-
-    #[instrument(level="debug", skip(self), fields(view_context=?self.context))]
-    async fn load_view(&self, id: &ViewId) -> Result<Option<Self::View>, ProjectionError> {
+    #[instrument(level="debug", skip(self), fields(view_name=%self.view_name))]
+    async fn load_view(&self, view_id: &ProjectionId) -> Result<Option<Self::View>, ProjectionError> {
         let store = self.store.read();
-        Ok(store.get(id).cloned())
+        Ok(store.get(view_id).cloned())
     }
 
-    #[instrument(level="debug", skip(self), fields(view_context=?self.context))]
-    async fn load_view_with_context(
-        &self,
-        id: &ViewId,
-    ) -> Result<Option<(Self::View, ViewContext)>, ProjectionError> {
-        self.load_view(id)
-            .await
-            .map(|view| view.map(|v| (v, self.context())))
-    }
-
-    #[instrument(level="debug", skip(self), fields(view_context=?self.context))]
-    async fn save_view(&self, view_id: ViewId, view: Self::View) -> Result<(), ProjectionError> {
+    #[instrument(level="debug", skip(self), fields(view_name=%self.view_name))]
+    async fn save_view(&self, view_id: &ProjectionId, view: Self::View) -> Result<(), ProjectionError> {
         let mut store = self.store.write();
-        store.insert(view_id, view);
+        store.insert(view_id.clone(), view);
         Ok(())
     }
 }
@@ -88,22 +70,15 @@ mod tests {
         let vid = "test_view_id".into();
 
         block_on(async move {
-            assert_none!(assert_ok!(storage.load_view_with_context(&vid).await));
+            assert_none!(assert_ok!(storage.load_view(&vid).await));
 
             let view = TestView {
                 label: "test_view".to_string(),
                 sum: 33,
             };
-            assert_ok!(storage.save_view(vid.clone(), view.clone()).await);
-            let saved = assert_some!(assert_ok!(storage.load_view_with_context(&vid).await));
-            assert_eq!(saved.0, view);
-            assert_eq!(
-                saved.1,
-                ViewContext {
-                    view_name: "test_load_and_save".into(),
-                    version: 1,
-                }
-            );
+            assert_ok!(storage.save_view(&vid, view.clone()).await);
+            let saved = assert_some!(assert_ok!(storage.load_view(&vid).await));
+            assert_eq!(saved, view);
         });
     }
 }

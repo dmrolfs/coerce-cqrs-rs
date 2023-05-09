@@ -6,11 +6,13 @@ mod provider;
 pub mod doc;
 mod sql_query;
 mod view_storage;
+mod offset;
 
 pub use actor::{protocol, PostgresJournal};
 pub use config::PostgresStorageConfig;
 pub use provider::{PostgresJournalStorage, PostgresStorageProvider};
-// pub use view_storage::{PostgresViewStorage};
+pub use view_storage::PostgresViewStorage;
+pub use offset::PostgresOffsetStorage;
 
 use crate::projection::PersistenceId;
 use smol_str::SmolStr;
@@ -99,5 +101,11 @@ pub enum PostgresStorageError {
     ActorRef(#[from] coerce::actor::ActorRefErr),
 
     #[error("{0}")]
+    ActorReply(#[from] tokio::sync::oneshot::error::RecvError),
+
+    #[error("{0}")]
     Sql(#[from] sqlx::Error),
+
+    #[error("{0}")]
+    Storage(anyhow::Error),
 }

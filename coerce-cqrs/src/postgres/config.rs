@@ -1,6 +1,15 @@
 use secrecy::{ExposeSecret, Secret};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
+use sqlx::PgPool;
 use std::time::Duration;
+
+#[instrument(level = "trace")]
+pub fn connect_with(config: &PostgresStorageConfig) -> PgPool {
+    let connection_options = config.pg_connect_options_with_db();
+    config
+        .pg_pool_options()
+        .connect_lazy_with(connection_options)
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PostgresStorageConfig {
