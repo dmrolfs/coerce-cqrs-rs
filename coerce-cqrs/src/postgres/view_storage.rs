@@ -1,7 +1,9 @@
 use crate::postgres::config;
 use crate::postgres::view_storage::actor::PostgresViewStorageActor;
 use crate::postgres::{PostgresStorageConfig, PostgresStorageError};
-use crate::projection::{ProjectionError, ProjectionId, ViewStorage};
+use crate::projection::{
+    ProjectionError, ProjectionId, ViewStorage, META_PROJECTION_ID, META_TABLE,
+};
 use coerce::actor::system::ActorSystem;
 use coerce::actor::{IntoActor, LocalActorRef};
 use serde::de::DeserializeOwned;
@@ -57,6 +59,8 @@ impl<V> PostgresViewStorage<V> {
     }
 }
 
+const META_VIEW_NAME: &str = "view_name";
+
 #[async_trait]
 impl<V> ViewStorage for PostgresViewStorage<V>
 where
@@ -73,10 +77,20 @@ where
         skip(self),
         fields(view_name=%self.view_name, view_storage_table=%self.view_storage_table)
     )]
-    async fn load_view(&self, view_id: &ProjectionId) -> Result<Option<Self::View>, ProjectionError> {
+    async fn load_view(
+        &self,
+        view_id: &ProjectionId,
+    ) -> Result<Option<Self::View>, ProjectionError> {
         let entry = actor::protocol::load_view(&self.storage, view_id)
             .await
-            .map_err(|err| ProjectionError::Storage(err.into()))?;
+            .map_err(|err| ProjectionError::Storage {
+                cause: err.into(),
+                meta: maplit::hashmap! {
+                    META_TABLE.to_string() => self.view_storage_table.to_string(),
+                    META_PROJECTION_ID.to_string() => view_id.to_string(),
+                    META_VIEW_NAME.to_string() => self.view_name.to_string(),
+                },
+            })?;
 
         let view = entry
             .as_ref()
@@ -95,13 +109,23 @@ where
         skip(self),
         fields(view_name=%self.view_name, view_storage_table=%self.view_storage_table)
     )]
-    async fn save_view(&self, view_id: &ProjectionId, view: Self::View) -> Result<(), ProjectionError> {
+    async fn save_view(
+        &self,
+        view_id: &ProjectionId,
+        view: Self::View,
+    ) -> Result<(), ProjectionError> {
         let bytes = bincode::serde::encode_to_vec(view, bincode::config::standard())?;
         let bytes = Arc::new(bytes);
         let entry = ViewEntry { bytes };
         let query_result = actor::protocol::save_view(&self.storage, view_id, entry)
             .await
-            .map_err(|err| ProjectionError::Storage(err.into()))?;
+            .map_err(|err| ProjectionError::Storage {
+                cause: err.into(),
+                meta: maplit::hashmap! {
+                    META_TABLE.to_string() => self.view_storage_table.to_string(),
+                    META_PROJECTION_ID.to_string() => view_id.to_string(),
+                },
+            })?;
         debug!(?query_result, "save_view completed");
         Ok(())
     }
@@ -112,10 +136,10 @@ mod actor {
         use crate::postgres::view_storage::actor::PostgresViewStorageActor;
         use crate::postgres::view_storage::ViewEntry;
         use crate::postgres::PostgresStorageError;
+        use crate::projection::ProjectionId;
         use coerce::actor::message::Message;
         use coerce::actor::LocalActorRef;
         use sqlx::postgres::PgQueryResult;
-        use crate::projection::ProjectionId;
 
         #[instrument(level = "debug", name = "protocol::load_view")]
         pub async fn load_view(
@@ -214,10 +238,10 @@ mod actor {
         ) -> Result<Option<ViewEntry>, PostgresStorageError> {
             sqlx::query(self.sql_query.select_latest_view())
                 .bind(message.view_id.as_ref())
+                .map(|row| self.entry_from_row(row))
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|err| err.into())
-                .map(|row| row.map(|r| self.entry_from_row(r)))
         }
     }
 
@@ -233,7 +257,7 @@ mod actor {
 
             let mut tx = sqlx::Acquire::begin(&self.pool).await?;
 
-            let now = now_timestamp();
+            let now = crate::now_timestamp();
 
             let query_result = sqlx::query(self.sql_query.update_or_insert_view())
                 .bind(view_id)
@@ -249,15 +273,9 @@ mod actor {
                 return Err(error.into());
             }
 
-            debug!(?query_result, "DMR: save_view completed.");
+            debug!("save_view completed: {query_result:?}");
             query_result
         }
-    }
-
-    fn now_timestamp() -> i64 {
-        iso8601_timestamp::Timestamp::now_utc()
-            .duration_since(iso8601_timestamp::Timestamp::UNIX_EPOCH)
-            .whole_seconds()
     }
 }
 
@@ -272,7 +290,12 @@ mod sql_query {
     const CREATED_AT_COL: &str = "created_at";
     const LAST_UPDATED_AT_COL: &str = "last_updated_at";
 
-    const VIEW_STORAGE_COLUMNS: [&str; 4] = [VIEW_ID_COL, PAYLOAD_COL, CREATED_AT_COL, LAST_UPDATED_AT_COL];
+    const VIEW_STORAGE_COLUMNS: [&str; 4] = [
+        VIEW_ID_COL,
+        PAYLOAD_COL,
+        CREATED_AT_COL,
+        LAST_UPDATED_AT_COL,
+    ];
     static VIEW_STORAGE_COLUMNS_REP: Lazy<String> = Lazy::new(|| VIEW_STORAGE_COLUMNS.join(", "));
     static VIEW_STORAGE_VALUES_REP: Lazy<String> = Lazy::new(|| {
         let values = (1..=VIEW_STORAGE_COLUMNS.len())
@@ -307,7 +330,7 @@ mod sql_query {
 
         fn where_view_id(&self) -> &str {
             self.where_view_id
-                .get_or_init(|| format!("{view_id} = $1", view_id=self.view_id_column()))
+                .get_or_init(|| format!("{view_id} = $1", view_id = self.view_id_column()))
         }
 
         #[allow(dead_code, clippy::missing_const_for_fn)]

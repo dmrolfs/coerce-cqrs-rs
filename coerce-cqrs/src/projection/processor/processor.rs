@@ -389,7 +389,10 @@ where
             Err(err) => {
                 error!(error=?err, last_offset=?context.offset, "failed to pull latest journal entries for {:?}.", context.context);
                 context.nr_repeat_errors += 1;
-                error = Some(ProjectionError::Storage(err));
+                error = Some(ProjectionError::Storage {
+                    cause: err,
+                    meta: maplit::hashmap! {},
+                });
             }
         };
 

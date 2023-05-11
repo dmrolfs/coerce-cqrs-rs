@@ -19,6 +19,15 @@ impl Offset {
     pub const fn as_i64(&self) -> i64 {
         self.1
     }
+
+    pub const fn timestamp(&self) -> Timestamp {
+        self.0
+    }
+
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn into_parts(self) -> (Timestamp, i64) {
+        (self.0, self.1)
+    }
 }
 
 impl Default for Offset {
@@ -86,7 +95,7 @@ impl OffsetStorage for InMemoryOffsetStorage {
         let key = (projection_id.clone(), persistence_id.clone());
         let key_rep = format!("({}-{:#})", key.0, key.1);
         let offset = Ok(self.inner.get(&key).map(|offset| *offset.value()));
-        debug!("DMR: read offset [{key_rep}] = {offset:?}");
+        debug!("read_offset [{key_rep}] = {offset:?}");
         offset
     }
 
@@ -100,7 +109,7 @@ impl OffsetStorage for InMemoryOffsetStorage {
         let key = (projection_id.clone(), persistence_id.clone());
         let key_rep = format!("({}-{:#})", key.0, key.1);
         let prior_offset = self.inner.insert(key, offset);
-        debug!("DMR: save offset [{key_rep}] = {offset:?} was {prior_offset:?}");
+        debug!("save_offset [{key_rep}] = {offset:?} was {prior_offset:?}");
         Ok(())
     }
 }

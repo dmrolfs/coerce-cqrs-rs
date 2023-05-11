@@ -123,7 +123,7 @@ mod tests {
             let system = ActorSystem::new().to_persistent(Persistence::from(storage_provider));
             let create_empty_actor = TestActor::default;
 
-            info!("DMR: INITIAL AGGREGATE SETUP...");
+            info!("**** INITIAL AGGREGATE SETUP...");
             let id = TestActor::next_id();
             let actor = assert_ok!(
                 create_empty_actor()
@@ -132,7 +132,7 @@ mod tests {
             );
             let pid = id.to_string();
             let journal = storage.read_latest_messages(&pid, 0).await;
-            info!(?actor, ?journal, "DMR: before - actor and journal");
+            info!(?actor, ?journal, "**** before - actor and journal");
             assert_ok!(actor.notify(Msg(1)));
             assert_ok!(actor.notify(Msg(2)));
             assert_ok!(actor.notify(Msg(3)));
@@ -146,18 +146,18 @@ mod tests {
                     })
                     .await
             );
-            info!(?actor, ?journal, "DMR: after - actor and journal");
+            info!(?actor, ?journal, "**** after - actor and journal");
             assert_eq!(actual, vec![1, 2, 3, 4]);
             assert_ok!(actor.stop().await);
 
-            info!("DMR: RECOVER AGGREGATE...");
+            info!("**** RECOVER AGGREGATE...");
             let recovered_actor =
                 assert_ok!(create_empty_actor().into_actor(Some(id), &system).await);
             info!("recovered_actor: {recovered_actor:?}");
             info!(
                 ?recovered_actor,
                 ?journal,
-                "DMR: before - recovered_actor and journal"
+                "**** before - recovered_actor and journal"
             );
             let recovered = assert_ok!(
                 recovered_actor
@@ -170,11 +170,11 @@ mod tests {
             info!(
                 ?recovered_actor,
                 ?journal,
-                "DMR: after - recovered_actor and journal"
+                "**** after - recovered_actor and journal"
             );
             assert_eq!(recovered, vec![1, 2, 3, 4]);
 
-            info!("DMR: SHUTDOWN...");
+            info!("**** SHUTDOWN...");
             system.shutdown().await;
         })
     }

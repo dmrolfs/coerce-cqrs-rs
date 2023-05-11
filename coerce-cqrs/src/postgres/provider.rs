@@ -96,11 +96,6 @@ where
 
     #[instrument(level = "debug", skip())]
     async fn write_message(&self, persistence_id: &str, entry: JournalEntry) -> anyhow::Result<()> {
-        debug!(
-            "DMR: PERSISTING MESSAGE: {:?}",
-            String::from_utf8(entry.bytes.to_vec())
-        );
-
         let storage_key = self.storage_key_for(persistence_id, EntryType::Journal);
         self.postgres_journal
             .send(protocol::WriteMessage { storage_key, entry })
@@ -114,14 +109,6 @@ where
         persistence_id: &str,
         entries: Vec<JournalEntry>,
     ) -> anyhow::Result<()> {
-        debug!(
-            "DMR: PERSISTING MESSAGES: {:?}",
-            entries
-                .iter()
-                .map(|e| String::from_utf8(e.bytes.to_vec()))
-                .collect::<Vec<_>>()
-        );
-
         let storage_key = self.storage_key_for(persistence_id, EntryType::Journal);
 
         self.postgres_journal
@@ -152,7 +139,6 @@ where
         from_sequence: i64,
     ) -> anyhow::Result<Option<Vec<JournalEntry>>> {
         let storage_key = self.storage_key_for(persistence_id, EntryType::Journal);
-        info!(%persistence_id, %from_sequence, "DMR: READ_LATEST_MESSAGES...");
 
         self.postgres_journal
             .send(protocol::ReadMessages {

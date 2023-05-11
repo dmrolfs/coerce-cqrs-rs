@@ -12,6 +12,7 @@ pub use processor::{
     CalculateInterval, CalculateIntervalFactory, ExponentialBackoff, Processor, ProcessorApi,
     ProcessorCommand, ProcessorErrorHandler, RegularInterval,
 };
+use std::collections::HashMap;
 
 use coerce::persistent::PersistentActor;
 use smol_str::SmolStr;
@@ -66,9 +67,9 @@ impl<T: ?Sized> From<PersistenceId> for Id<T, String> {
 }
 
 impl<T> From<Id<T, <<T as Entity>::IdGen as IdGenerator>::IdType>> for PersistenceId
-    where
-        T: Entity + ?Sized,
-        <<T as Entity>::IdGen as IdGenerator>::IdType: ToString,
+where
+    T: Entity + ?Sized,
+    <<T as Entity>::IdGen as IdGenerator>::IdType: ToString,
 {
     fn from(id: Id<T, <<T as Entity>::IdGen as IdGenerator>::IdType>) -> Self {
         Self {
@@ -77,49 +78,6 @@ impl<T> From<Id<T, <<T as Entity>::IdGen as IdGenerator>::IdType>> for Persisten
         }
     }
 }
-
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub struct ProjectionName(SmolStr);
-
-impl fmt::Display for ProjectionName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl ProjectionName {
-    pub fn new(name: impl AsRef<str>) -> Self {
-        Self(SmolStr::new(name.as_ref()))
-    }
-}
-
-impl From<String> for ProjectionName {
-    fn from(name: String) -> Self {
-        Self::new(name)
-    }
-}
-
-impl From<&str> for ProjectionName {
-    fn from(name: &str) -> Self {
-        Self::new(name)
-    }
-}
-
-impl From<SmolStr> for ProjectionName {
-    fn from(name: SmolStr) -> Self {
-        Self::new(name.as_str())
-    }
-}
-
-impl AsRef<str> for ProjectionName {
-    fn as_ref(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -162,12 +120,15 @@ impl AsRef<str> for ProjectionId {
     }
 }
 
-
 #[async_trait]
 pub trait EventProcessor<E> {
     type Error;
     async fn process(&self, event: EventEnvelope<E>) -> Result<(), Self::Error>;
 }
+
+pub const META_TABLE: &str = "table";
+pub const META_PROJECTION_ID: &str = "projection_id";
+pub const META_PERSISTENCE_ID: &str = "persistence_id";
 
 #[derive(Debug, Error)]
 pub enum ProjectionError {
@@ -186,6 +147,9 @@ pub enum ProjectionError {
     #[error("{0}")]
     MessageUnwrap(#[from] coerce::actor::message::MessageUnwrapErr),
 
-    #[error("{0}")]
-    Storage(anyhow::Error),
+    #[error("meta:{meta:?}, {cause}")]
+    Storage {
+        cause: anyhow::Error,
+        meta: HashMap<String, String>,
+    },
 }

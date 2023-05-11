@@ -36,13 +36,20 @@ where
     }
 
     #[instrument(level="debug", skip(self), fields(view_name=%self.view_name))]
-    async fn load_view(&self, view_id: &ProjectionId) -> Result<Option<Self::View>, ProjectionError> {
+    async fn load_view(
+        &self,
+        view_id: &ProjectionId,
+    ) -> Result<Option<Self::View>, ProjectionError> {
         let store = self.store.read();
         Ok(store.get(view_id).cloned())
     }
 
     #[instrument(level="debug", skip(self), fields(view_name=%self.view_name))]
-    async fn save_view(&self, view_id: &ProjectionId, view: Self::View) -> Result<(), ProjectionError> {
+    async fn save_view(
+        &self,
+        view_id: &ProjectionId,
+        view: Self::View,
+    ) -> Result<(), ProjectionError> {
         let mut store = self.store.write();
         store.insert(view_id.clone(), view);
         Ok(())

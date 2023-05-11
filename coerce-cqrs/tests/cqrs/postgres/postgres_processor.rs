@@ -5,11 +5,12 @@ use coerce::actor::system::ActorSystem;
 use coerce::actor::IntoActor;
 use coerce::persistent::journal::provider::StorageProvider;
 use coerce::persistent::Persistence;
-use coerce_cqrs::postgres::{PostgresStorageConfig, PostgresStorageProvider, PostgresViewStorage};
+use coerce_cqrs::postgres::{
+    PostgresOffsetStorage, PostgresStorageConfig, PostgresStorageProvider, PostgresViewStorage,
+};
 use coerce_cqrs::projection::RegularInterval;
 use coerce_cqrs::projection::{
-    InMemoryOffsetStorage, OffsetStorage, PersistenceId, Processor, ProjectionId, ViewApplicator,
-    ViewStorage,
+    OffsetStorage, PersistenceId, Processor, ProjectionId, ViewApplicator, ViewStorage,
 };
 use coerce_cqrs::CommandResult;
 use coerce_cqrs_test::fixtures::aggregate::{
@@ -43,20 +44,22 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
         acquire_timeout: Some(Duration::from_secs(5)),
         idle_timeout: None,
     };
-    // let view_storage = Arc::new(InMemoryViewStorage::<TestView>::new("test_load_and_save"));
+
     let view_storage = assert_ok!(
         PostgresViewStorage::<TestView>::new("test_view", "test_view", &storage_config, &system)
             .await
     );
     let view_storage = Arc::new(view_storage);
     let view_apply = ViewApplicator::new(view_storage.clone(), aggregate::apply_test_event_to_view);
-    let storage_provider = PostgresStorageProvider::connect(storage_config, &system).await?;
+    let storage_provider =
+        PostgresStorageProvider::connect(storage_config.clone(), &system).await?;
     let storage = storage_provider
         .journal_storage()
         .ok_or_else(|| anyhow!("no journal storage!"))?;
     let system = system.to_persistent(Persistence::from(storage_provider));
 
-    let offset_storage = Arc::new(InMemoryOffsetStorage::default());
+    let offset_storage =
+        Arc::new(PostgresOffsetStorage::new("projection_offset", &storage_config, &system).await?);
 
     let aid = TestAggregate::next_id();
     let pid = PersistenceId::from_aggregate_id::<TestAggregate>(aid.id.as_str());
@@ -77,7 +80,7 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
         let result = processor.block_for_completion().await;
         tracing::info!(
             ?result,
-            "DMR: PROCESSOR BLOCK FINISHED...  EXITING SPAWN..."
+            "**** PROCESSOR BLOCK FINISHED...  EXITING SPAWN..."
         );
         result
     });
@@ -87,7 +90,7 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
             .into_actor(Some(aid.clone()), &system)
             .await
     );
-    tracing::info!("DMR: CMD - START");
+    tracing::info!("**** COMMANDS - START");
 
     const DESCRIPTION: &str = "tests starting now!... now... now";
 
@@ -98,64 +101,48 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     );
     assert_eq!(reply, CommandResult::Ok("active:0".to_string()));
 
-    tracing::info!("DMR: SLEEP...");
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    tracing::info!("DMR: WAKE");
-
-    tracing::info!("DMR: CMD - TEST-1");
+    tracing::info!("**** CMD - TEST-1");
     let reply = assert_ok!(actor.send(TestCommand::Test(1)).await);
     assert_eq!(reply, CommandResult::Ok("active:1".to_string()));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1]));
 
-    tracing::info!("DMR: SLEEP...");
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    tracing::info!("DMR: WAKE");
-
-    tracing::info!("DMR: CMD - TEST-2");
+    tracing::info!("**** CMD - TEST-2");
     let reply = assert_ok!(actor.send(TestCommand::Test(2)).await);
     assert_eq!(reply, CommandResult::Ok("active:3".to_string()));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2]));
 
-    tracing::info!("DMR: SLEEP...");
+    tracing::info!("**** SLEEP...");
     tokio::time::sleep(Duration::from_millis(400)).await;
-    tracing::info!("DMR: WAKE");
+    tracing::info!("**** WAKE");
 
-    tracing::info!("DMR: CMD - TEST-3");
+    tracing::info!("**** CMD - TEST-3");
     let reply = assert_ok!(actor.send(TestCommand::Test(3)).await);
     assert_eq!(reply, CommandResult::Ok("active:6".to_string()));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3,]));
 
-    tracing::info!("DMR: SLEEP...");
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    tracing::info!("DMR: WAKE");
-
-    tracing::info!("DMR: CMD - TEST-5");
+    tracing::info!("**** CMD - TEST-5");
     let reply = assert_ok!(actor.send(TestCommand::Test(5)).await);
     assert_eq!(reply, CommandResult::Ok("active:11".to_string()));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3, 5,]));
 
-    tracing::info!("DMR: SLEEP...");
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    tracing::info!("DMR: WAKE");
-
-    tracing::info!("DMR: CMD - STOP");
+    tracing::info!("**** CMD - STOP");
     let reply = assert_ok!(actor.send(TestCommand::Stop).await);
     assert_eq!(reply, CommandResult::Ok("completed:11".to_string()));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::completed(DESCRIPTION, vec![1, 2, 3, 5]));
 
-    tracing::info!("DMR: STOP ACTOR");
+    tracing::info!("**** STOP ACTOR");
     assert_ok!(actor.stop().await);
 
-    tracing::info!("DMR: SLEEP...");
+    tracing::info!("**** SLEEP...");
     tokio::time::sleep(Duration::from_millis(500)).await;
-    tracing::info!("DMR: WAKE");
+    tracing::info!("**** WAKE");
 
-    tracing::info!("DMR: LOAD VIEW...");
+    tracing::info!("**** LOAD VIEW...");
     let view = assert_some!(assert_ok!(view_storage.load_view(&vid).await));
     assert_eq!(
         view,
@@ -165,8 +152,8 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
         }
     );
 
-    info!("DMR: EXAMINE EVENTS");
-    // let events = assert_some!(assert_ok!(storage.read_latest_messages(pid.to_string().as_str(), -10000).await));
+    info!("**** EXAMINE EVENTS");
+
     let events = assert_some!(assert_ok!(
         storage.read_latest_messages(&format!("{:#}", pid), 0).await
     ));
@@ -187,19 +174,19 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
         ]
     );
 
-    info!("DMR: EXAMINE OFFSET");
+    info!("**** EXAMINE OFFSET");
     let offset = assert_some!(assert_ok!(
         offset_storage.read_offset(&projection_id, &pid).await
     ));
-    tracing::info!("DMR: after tests offset: {offset:?}");
+    tracing::info!("**** after tests offset: {offset:?}");
     assert_eq!(offset.as_i64(), 6);
 
-    tracing::info!("DMR: STOP PROCESSOR...");
+    tracing::info!("**** STOP PROCESSOR...");
     assert_ok!(coerce_cqrs::projection::ProcessorCommand::stop(&stop_api).await);
-    tracing::info!("DMR: SHUTTING DOWN ACTOR SYSTEM...");
+    tracing::info!("**** SHUTTING DOWN ACTOR SYSTEM...");
     system.shutdown().await;
-    tracing::info!("DMR: WAITING FOR PROCESSOR TO FINISH...");
+    tracing::info!("**** WAITING FOR PROCESSOR TO FINISH...");
     assert_ok!(assert_ok!(processor_handle.await));
-    tracing::info!("DMR: DONE FINISHING TEST");
+    tracing::info!("**** DONE FINISHING TEST");
     Ok(())
 }

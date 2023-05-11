@@ -54,7 +54,7 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
         let result = processor.block_for_completion().await;
         tracing::info!(
             ?result,
-            "DMR: PROCESSOR BLOCK FINISHED...  EXITING SPAWN..."
+            "**** PROCESSOR BLOCK FINISHED...  EXITING SPAWN..."
         );
         result
     });
@@ -64,45 +64,45 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
             .into_actor(Some(aid.clone()), &system)
             .await
     );
-    tracing::info!("DMR: CMD - START");
+    tracing::info!("**** COMMANDS - START");
 
     const DESCRIPTION: &str = "tests starting now!... now... now";
 
     assert_ok!(actor.notify(TestCommand::Start(DESCRIPTION.to_string())));
 
-    tracing::info!("DMR: CMD - TEST-1");
+    tracing::info!("**** CMD - TEST-1");
     assert_ok!(actor.notify(TestCommand::Test(1)));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1]));
 
-    tracing::info!("DMR: CMD - TEST-2");
+    tracing::info!("**** CMD - TEST-2");
     assert_ok!(actor.notify(TestCommand::Test(2)));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2]));
 
-    tracing::info!("DMR: CMD - TEST-3");
+    tracing::info!("**** CMD - TEST-3");
     assert_ok!(actor.notify(TestCommand::Test(3)));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3,]));
 
-    tracing::info!("DMR: CMD - TEST-5");
+    tracing::info!("**** CMD - TEST-5");
     assert_ok!(actor.notify(TestCommand::Test(5)));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3, 5,]));
 
-    tracing::info!("DMR: CMD - STOP");
+    tracing::info!("**** CMD - STOP");
     assert_ok!(actor.notify(TestCommand::Stop));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::completed(DESCRIPTION, vec![1, 2, 3, 5]));
 
-    tracing::info!("DMR: STOP ACTOR");
+    tracing::info!("**** STOP ACTOR");
     assert_ok!(actor.stop().await);
 
-    tracing::info!("DMR: SLEEP...");
+    tracing::info!("**** SLEEP...");
     tokio::time::sleep(Duration::from_millis(100)).await;
-    tracing::info!("DMR: WAKE");
+    tracing::info!("**** WAKE");
 
-    tracing::info!("DMR: LOAD VIEW...");
+    tracing::info!("**** LOAD VIEW...");
     let view = assert_some!(assert_ok!(view_storage.load_view(&vid).await));
     assert_eq!(
         view,
@@ -112,7 +112,7 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
         }
     );
 
-    info!("DMR: EXAMINE EVENTS");
+    info!("**** EXAMINE EVENTS");
     // let events = assert_some!(assert_ok!(storage.read_latest_messages(pid.to_string().as_str(), -10000).await));
     let events = assert_some!(assert_ok!(
         storage.read_latest_messages(&format!("{:#}", pid), 0).await
@@ -134,21 +134,21 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
         ]
     );
 
-    info!("DMR: EXAMINE OFFSET");
+    info!("**** EXAMINE OFFSET");
     let offset = assert_some!(assert_ok!(
         offset_storage
             .read_offset(&ProjectionId::new("test_memory_projection"), &pid)
             .await
     ));
-    tracing::info!("DMR: after tests offset: {offset:?}");
+    tracing::info!("**** after tests offset: {offset:?}");
     assert_eq!(offset.as_i64(), 6);
 
-    tracing::info!("DMR: STOP PROCESSOR...");
+    tracing::info!("**** STOP PROCESSOR...");
     assert_ok!(coerce_cqrs::projection::ProcessorCommand::stop(&stop_api).await);
-    tracing::info!("DMR: SHUTTING DOWN ACTOR SYSTEM...");
+    tracing::info!("**** SHUTTING DOWN ACTOR SYSTEM...");
     system.shutdown().await;
-    tracing::info!("DMR: WAITING FOR PROCESSOR TO FINISH...");
+    tracing::info!("**** WAITING FOR PROCESSOR TO FINISH...");
     assert_ok!(assert_ok!(processor_handle.await));
-    tracing::info!("DMR: DONE FINISHING TEST");
+    tracing::info!("**** DONE FINISHING TEST");
     Ok(())
 }

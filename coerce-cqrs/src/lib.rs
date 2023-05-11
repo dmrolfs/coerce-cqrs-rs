@@ -26,9 +26,22 @@ pub mod postgres;
 pub mod projection;
 
 pub use aggregate::{AggregateError, AggregateState, ApplyAggregateEvent, CommandResult};
+use iso8601_timestamp::Timestamp;
 
 //todo: remove once crate persistent & projection parts fully tested
 pub mod memory;
 
 #[doc(hidden)]
 pub mod doc;
+
+pub(crate) fn now_timestamp() -> i64 {
+    timestamp_seconds(Timestamp::now_utc())
+}
+
+pub(crate) fn timestamp_seconds(ts: Timestamp) -> i64 {
+    ts.duration_since(Timestamp::UNIX_EPOCH).whole_seconds()
+}
+
+pub(crate) const fn timestamp_from_seconds(seconds: i64) -> Option<Timestamp> {
+    Timestamp::UNIX_EPOCH.checked_add(iso8601_timestamp::Duration::seconds(seconds))
+}

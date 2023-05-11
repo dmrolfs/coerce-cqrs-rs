@@ -293,18 +293,16 @@ impl Handler<ReadSnapshot> for PostgresJournal {
     ) -> Result<Option<JournalEntry>, PostgresStorageError> {
         sqlx::query(self.sql_query.select_snapshot())
             .bind(message.storage_key.as_ref())
+            .map(|row| {
+                self.entry_from_row(
+                    row,
+                    self.sql_query.snapshot_manifest_column(),
+                    self.sql_query.snapshot_payload_column(),
+                )
+            })
             .fetch_optional(&self.pool)
             .await
             .map_err(|err| err.into())
-            .map(|row| {
-                row.map(|r| {
-                    self.entry_from_row(
-                        r,
-                        self.sql_query.snapshot_manifest_column(),
-                        self.sql_query.snapshot_payload_column(),
-                    )
-                })
-            })
     }
 }
 
@@ -342,23 +340,17 @@ impl Handler<ReadMessages> for PostgresJournal {
         };
 
         query
+            .map(|row| {
+                self.entry_from_row(
+                    row,
+                    self.sql_query.event_manifest_column(),
+                    self.sql_query.event_payload_column(),
+                )
+            })
             .fetch_all(&self.pool)
             .await
             .map_err(|err| err.into())
-            .map(|rows| {
-                let entries = rows
-                    .into_iter()
-                    .map(|r| {
-                        self.entry_from_row(
-                            r,
-                            self.sql_query.event_manifest_column(),
-                            self.sql_query.event_payload_column(),
-                        )
-                    })
-                    .collect();
-
-                Some(entries)
-            })
+            .map(Some)
     }
 }
 

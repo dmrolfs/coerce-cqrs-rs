@@ -146,7 +146,7 @@ impl JournalStorage for InMemoryJournalStorage {
                         .enumerate()
                         .find(|(_index, j)| j.sequence > from_sequence)
                         .map(|(index, j)| {
-                            info!(%index, sequence=%j.sequence, %from_sequence, "DMR: found starting message");
+                            debug!(sequence=%j.sequence, %from_sequence, "found starting message: {index}");
                             index
                         });
 

@@ -34,7 +34,7 @@ pub fn apply_test_event_to_view(mut view: TestView, event: TestEvent) -> TestVie
 
         TestEvent::Tested(value) => {
             let old_sum = view.sum;
-            view.sum = view.sum + value;
+            view.sum += value;
             debug!(
                 "DMR: VIEW: updating sum: {old_sum} + {value} = {new_sum}",
                 new_sum = view.sum

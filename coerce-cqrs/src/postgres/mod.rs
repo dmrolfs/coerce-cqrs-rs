@@ -4,15 +4,15 @@ mod provider;
 
 #[doc(hidden)]
 pub mod doc;
+mod offset;
 mod sql_query;
 mod view_storage;
-mod offset;
 
 pub use actor::{protocol, PostgresJournal};
 pub use config::PostgresStorageConfig;
+pub use offset::PostgresOffsetStorage;
 pub use provider::{PostgresJournalStorage, PostgresStorageProvider};
 pub use view_storage::PostgresViewStorage;
-pub use offset::PostgresOffsetStorage;
 
 use crate::projection::PersistenceId;
 use smol_str::SmolStr;
