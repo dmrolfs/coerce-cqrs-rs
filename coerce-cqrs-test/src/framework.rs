@@ -109,17 +109,13 @@ where
 {
     /// Initiates an aggregate test with no prior events.
     ///
-    /// ```ignore
-    /// use coerce_cqrs_test::fixtures::aggregate::TestAggregate;
+    /// ```
+    /// # use coerce_cqrs_test::fixtures::aggregate::TestAggregate;
     /// use coerce_cqrs_test::framework::TestFramework;
-    /// async fn test() {
     ///
     /// let executor = TestFramework::<TestAggregate, _>::default()
     ///     .with_memory_storage()
-    ///     .given_no_previous_events()
-    ///     .await;
-    ///
-    /// }
+    ///     .given_no_previous_events();
     /// ```
     #[must_use = "must use AggregateTestExecutor"]
     pub async fn given_no_previous_events(self) -> AggregateTestExecutor<A> {
@@ -143,13 +139,16 @@ where
 
     /// Initiates an aggregate test with a history of prior events.
     ///
-    /// ```ignore
-    /// use coerce_cqrs_test::fixtures::aggregate::{TestAggregate, TestEvent};
+    /// ```
+    /// # use coerce_cqrs_test::fixtures::aggregate::{TestAggregate, TestEvent};
     /// use coerce_cqrs_test::framework::TestFramework;
     ///
-    /// let executor = TestFramework::<TestAggregate, _>::with_memory_storage()
-    ///     .given(vec![TestEvent::Started("started".to_string()), TestEvent::Tested(1)])
-    ///     .await;
+    /// let executor = TestFramework::<TestAggregate, _>::default()
+    ///     .with_memory_storage()
+    ///     .given(
+    ///         "my_journal_message_type",
+    ///         vec![TestEvent::Started("started".to_string()), TestEvent::Tested(1)]
+    ///     );
     /// ```
     #[must_use = "must use AggregateTestExecutor"]
     pub async fn given<E>(
