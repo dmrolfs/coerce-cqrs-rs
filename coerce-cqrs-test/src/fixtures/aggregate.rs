@@ -109,15 +109,15 @@ pub struct TestAggregateSnapshot {
 #[derive(Debug, Default, Clone, Label, PartialEq, Eq)]
 pub struct TestAggregate {
     state: TestState,
-    sequence: i64,
-    snapshot_after: Option<i64>,
+    nr_events: i64,
+    snapshot_after_nr_events: Option<i64>,
 }
 
 impl TestAggregate {
     #[allow(clippy::missing_const_for_fn)]
     pub fn with_snapshots(self, snapshot_after: i64) -> Self {
         Self {
-            snapshot_after: Some(snapshot_after),
+            snapshot_after_nr_events: Some(snapshot_after),
             ..self
         }
     }
@@ -184,9 +184,9 @@ impl Handler<TestCommand> for TestAggregate {
                 self.state = new_state;
             }
 
-            self.sequence += 1;
-            if let Some(snapshot_after) = self.snapshot_after {
-                if self.sequence % snapshot_after == 0 {
+            self.nr_events += 1;
+            if let Some(snapshot_after_nr_events) = self.snapshot_after_nr_events {
+                if self.nr_events % snapshot_after_nr_events == 0 {
                     let snapshot = TestAggregateSnapshot {
                         state: self.state.clone(),
                     };
@@ -194,13 +194,13 @@ impl Handler<TestCommand> for TestAggregate {
                         ?snapshot,
                         "[{}] TAKING A SNAPSHOT after {} events...",
                         ctx.id(),
-                        self.sequence
+                        self.nr_events
                     );
                     if let Err(error) = self.snapshot(snapshot, ctx).await {
                         error!(
-                            %snapshot_after,
+                            %snapshot_after_nr_events,
                             "[{}] failed to snapshot event at sequence: {}",
-                            ctx.id(), self.sequence
+                            ctx.id(), self.nr_events
                         );
                         return error.into();
                     }
