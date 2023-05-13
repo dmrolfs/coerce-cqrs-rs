@@ -366,7 +366,7 @@ mod sql_query {
                     .set(format!("{payload_col} = EXCLUDED.{payload_col}, last_updated_at = EXCLUDED.last_updated_at").as_str())
                     .to_string();
 
-                let conflict_clause = format!("( {} ) DO UPDATE {}", self.view_id_column(), update_clause);
+                let conflict_clause = format!("( {primary_key} ) DO UPDATE {update_clause}", primary_key = self.view_id_column());
 
                 sql::Insert::new()
                     .insert_into(

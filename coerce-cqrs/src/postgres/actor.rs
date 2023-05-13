@@ -144,12 +144,6 @@ impl Actor for PostgresJournal {
     async fn stopped(&mut self, ctx: &mut ActorContext) {}
 }
 
-fn created_at() -> i64 {
-    iso8601_timestamp::Timestamp::now_utc()
-        .duration_since(iso8601_timestamp::Timestamp::UNIX_EPOCH)
-        .whole_seconds()
-}
-
 const EMPTY_META: serde_json::Value = serde_json::Value::Null;
 
 impl PostgresJournal {
@@ -172,7 +166,7 @@ impl PostgresJournal {
             .bind(entry.payload_type.as_ref()) // event_manifest
             .bind(entry.bytes.to_vec()) // event_payload
             .bind(EMPTY_META.clone()) // meta_payload
-            .bind(created_at()); // created_at
+            .bind(crate::now_timestamp()); // created_at
 
         let query_result = query.execute(tx).await.map_err(|err| err.into());
         match &query_result {
@@ -244,14 +238,17 @@ impl Handler<WriteSnapshot> for PostgresJournal {
     ) -> Result<(), PostgresStorageError> {
         let storage_key = message.storage_key.as_ref();
 
+        let now = crate::now_timestamp();
+
         let mut tx = sqlx::Acquire::begin(&self.pool).await?;
-        let _ = sqlx::query(self.sql_query.insert_snapshot())
+        let _ = sqlx::query(self.sql_query.update_or_insert_snapshot())
             .bind(storage_key) // persistence_id
             .bind(message.entry.sequence) // sequence_number
             .bind(message.entry.payload_type.as_ref()) // snapshot_manifest
             .bind(message.entry.bytes.to_vec()) // snapshot_payload
             .bind(EMPTY_META.clone()) // meta_payload
-            .bind(created_at()) // created_at
+            .bind(now) // created_at
+            .bind(now) // last_updated_at
             .execute(&mut tx)
             .await?;
 

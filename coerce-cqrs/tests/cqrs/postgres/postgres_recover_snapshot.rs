@@ -22,9 +22,9 @@ use std::time::Duration;
 use tagid::Entity;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_postgres_processor_config() -> anyhow::Result<()> {
+async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
     Lazy::force(&coerce_cqrs_test::setup_tracing::TEST_TRACING);
-    let main_span = tracing::info_span!("test_postgres_processor_config");
+    let main_span = info_span!("test_postgres_recover_snapshot");
     let _main_span_guard = main_span.enter();
 
     let system = ActorSystem::new();
@@ -78,7 +78,7 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     let stop_api = processor.tx_api();
     let processor_handle = tokio::spawn(async move {
         let result = processor.block_for_completion().await;
-        tracing::info!(
+        info!(
             ?result,
             "**** PROCESSOR BLOCK FINISHED...  EXITING SPAWN..."
         );
@@ -87,10 +87,11 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
 
     let actor = assert_ok!(
         TestAggregate::default()
+            .with_snapshots(3)
             .into_actor(Some(aid.clone()), &system)
             .await
     );
-    tracing::info!("**** COMMANDS - START");
+    info!("**** COMMANDS - START");
 
     const DESCRIPTION: &str = "tests starting now!... now... now";
 
@@ -101,48 +102,62 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     );
     assert_eq!(reply, CommandResult::Ok("active:0".to_string()));
 
-    tracing::info!("**** CMD - TEST-1");
+    info!("**** CMD - TEST-1");
     let reply = assert_ok!(actor.send(TestCommand::Test(1)).await);
+
     assert_eq!(reply, CommandResult::Ok("active:1".to_string()));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1]));
 
-    tracing::info!("**** CMD - TEST-2");
+    info!("**** CMD - TEST-2");
     let reply = assert_ok!(actor.send(TestCommand::Test(2)).await);
     assert_eq!(reply, CommandResult::Ok("active:3".to_string()));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2]));
 
-    tracing::info!("**** SLEEP...");
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    tracing::info!("**** WAKE");
+    info!("**** STOP ACTOR");
+    assert_ok!(actor.stop().await);
 
-    tracing::info!("**** CMD - TEST-3");
+    info!("**** SLEEP...");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    info!("**** WAKE");
+
+    info!("**** ACQUIRING AGGREGATE ACTOR...");
+    let actor = assert_ok!(
+        TestAggregate::default()
+            .with_snapshots(3)
+            .into_actor(Some(aid.clone()), &system)
+            .await
+    );
+    // let summary = assert_ok!(actor.send(Summarize::default()).await);
+    // assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3,]));
+
+    info!("**** CMD - TEST-3");
     let reply = assert_ok!(actor.send(TestCommand::Test(3)).await);
     assert_eq!(reply, CommandResult::Ok("active:6".to_string()));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3,]));
 
-    tracing::info!("**** CMD - TEST-5");
+    info!("**** CMD - TEST-5");
     let reply = assert_ok!(actor.send(TestCommand::Test(5)).await);
     assert_eq!(reply, CommandResult::Ok("active:11".to_string()));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3, 5,]));
 
-    tracing::info!("**** CMD - STOP");
+    info!("**** CMD - STOP");
     let reply = assert_ok!(actor.send(TestCommand::Stop).await);
     assert_eq!(reply, CommandResult::Ok("completed:11".to_string()));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::completed(DESCRIPTION, vec![1, 2, 3, 5]));
 
-    tracing::info!("**** STOP ACTOR");
+    info!("**** STOP ACTOR");
     assert_ok!(actor.stop().await);
 
-    tracing::info!("**** SLEEP...");
+    info!("**** SLEEP...");
     tokio::time::sleep(Duration::from_millis(500)).await;
-    tracing::info!("**** WAKE");
+    info!("**** WAKE");
 
-    tracing::info!("**** LOAD VIEW...");
+    info!("**** LOAD VIEW...");
     let view = assert_some!(assert_ok!(view_storage.load_view(&vid).await));
     assert_eq!(
         view,
@@ -178,15 +193,15 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     let offset = assert_some!(assert_ok!(
         offset_storage.read_offset(&projection_id, &pid).await
     ));
-    tracing::info!("**** after tests offset: {offset:?}");
-    assert_eq!(offset.as_i64(), 6);
+    info!("**** after tests offset: {offset:?}");
+    assert_eq!(offset.as_i64(), 7);
 
-    tracing::info!("**** STOP PROCESSOR...");
+    info!("**** STOP PROCESSOR...");
     assert_ok!(coerce_cqrs::projection::ProcessorCommand::stop(&stop_api).await);
-    tracing::info!("**** SHUTTING DOWN ACTOR SYSTEM...");
+    info!("**** SHUTTING DOWN ACTOR SYSTEM...");
     system.shutdown().await;
-    tracing::info!("**** WAITING FOR PROCESSOR TO FINISH...");
+    info!("**** WAITING FOR PROCESSOR TO FINISH...");
     assert_ok!(assert_ok!(processor_handle.await));
-    tracing::info!("**** DONE FINISHING TEST");
+    info!("**** DONE FINISHING TEST");
     Ok(())
 }

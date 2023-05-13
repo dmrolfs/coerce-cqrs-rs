@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS public.snapshots (
   snapshot_payload BYTEA NOT NULL,
   meta_payload JSONB,
   created_at BIGINT NOT NULL,
+  last_updated_at BIGINT NOT NULL,
 
-  PRIMARY KEY(persistence_id, sequence_number)
+  PRIMARY KEY(persistence_id)
 );

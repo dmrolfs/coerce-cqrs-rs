@@ -30,13 +30,14 @@ static EVENT_VALUES_REP: Lazy<String> = Lazy::new(|| {
     format!("( {values} )")
 });
 
-const SNAPSHOTS_COLUMNS: [&str; 6] = [
+const SNAPSHOTS_COLUMNS: [&str; 7] = [
     PERSISTENCE_ID_COL,
     SEQUENCE_NR_COL,
     SNAPSHOT_MANIFEST_COL,
     SNAPSHOT_PAYLOAD_COL,
     "meta_payload",
     "created_at",
+    "last_updated_at",
 ];
 static SNAPSHOTS_COLUMNS_REP: Lazy<String> = Lazy::new(|| SNAPSHOTS_COLUMNS.join(", "));
 static SNAPSHOTS_VALUES_REP: Lazy<String> = Lazy::new(|| {
@@ -69,8 +70,9 @@ pub struct SqlQueryFactory {
     delete_events_range: OnceCell<String>,
     delete_latest_events: OnceCell<String>,
     select_snapshot: OnceCell<String>,
-    insert_snapshot: OnceCell<String>,
-    update_snapshot: OnceCell<String>,
+    update_or_insert: OnceCell<String>,
+    // insert_snapshot: OnceCell<String>,
+    // update_snapshot: OnceCell<String>,
     delete_snapshot: OnceCell<String>,
     clear_aggregate_events: OnceCell<String>,
 }
@@ -104,8 +106,9 @@ impl SqlQueryFactory {
             delete_events_range: OnceCell::new(),
             delete_latest_events: OnceCell::new(),
             select_snapshot: OnceCell::new(),
-            insert_snapshot: OnceCell::new(),
-            update_snapshot: OnceCell::new(),
+            update_or_insert: OnceCell::new(),
+            // insert_snapshot: OnceCell::new(),
+            // update_snapshot: OnceCell::new(),
             delete_snapshot: OnceCell::new(),
             clear_aggregate_events: OnceCell::new(),
         }
@@ -315,45 +318,71 @@ impl SqlQueryFactory {
                 .select(&SNAPSHOTS_COLUMNS_REP)
                 .from(self.snapshots_table())
                 .where_clause(self.where_persistence_id())
+                .order_by(format!("{} desc", self.sequence_number_column()).as_str())
+                .limit("1")
                 .to_string()
         })
     }
 
     #[inline]
-    pub fn insert_snapshot(&self) -> &str {
-        self.insert_snapshot.get_or_init(|| {
+    pub fn update_or_insert_snapshot(&self) -> &str {
+        self.update_or_insert.get_or_init(|| {
+            let table = self.snapshots_table.as_ref().expect("No snapshot table set").as_str();
+            let payload_col = self.snapshot_payload_column();
+            let sequence_col = self.sequence_number_column();
+
+            let update_clause = sql::Update::new()
+                .set(format!("{payload_col} = EXCLUDED.{payload_col}, {sequence_col} = EXCLUDED.{sequence_col}, last_updated_at = EXCLUDED.last_updated_at").as_str())
+                .to_string();
+
+            let conflict_clause = format!(
+                "( {primary_key} ) DO UPDATE {update_clause}",
+                primary_key = self.persistence_id_column(),
+            );
+
             sql::Insert::new()
-                .insert_into(
-                    format!(
-                        "{} ( {} )",
-                        SNAPSHOTS_COLUMNS_REP.as_str(),
-                        self.snapshots_table()
-                    )
-                    .as_str(),
-                )
+                .insert_into(format!("{table} ( {columns} )", columns = SNAPSHOTS_COLUMNS_REP.as_str()).as_str())
                 .values(SNAPSHOTS_VALUES_REP.as_str())
+                .on_conflict(&conflict_clause)
                 .to_string()
         })
     }
 
-    #[allow(dead_code)]
-    #[inline]
-    pub fn update_snapshot(&self) -> &str {
-        self.update_snapshot.get_or_init(|| {
-            sql::Update::new()
-                .update(self.snapshots_table())
-                .set(
-                    format!(
-                        "{} = $2, {} = $3, created_at = $4",
-                        self.sequence_number_column(),
-                        self.snapshot_payload_column()
-                    )
-                    .as_str(),
-                )
-                .where_clause(self.where_persistence_id())
-                .to_string()
-        })
-    }
+    // #[inline]
+    // pub fn insert_snapshot(&self) -> &str {
+    //     self.insert_snapshot.get_or_init(|| {
+    //         sql::Insert::new()
+    //             .insert_into(
+    //                 format!(
+    //                     "{} ( {} )",
+    //                     self.snapshots_table(),
+    //                     SNAPSHOTS_COLUMNS_REP.as_str(),
+    //                 )
+    //                 .as_str(),
+    //             )
+    //             .values(SNAPSHOTS_VALUES_REP.as_str())
+    //             .to_string()
+    //     })
+    // }
+    //
+    // #[allow(dead_code)]
+    // #[inline]
+    // pub fn update_snapshot(&self) -> &str {
+    //     self.update_snapshot.get_or_init(|| {
+    //         sql::Update::new()
+    //             .update(self.snapshots_table())
+    //             .set(
+    //                 format!(
+    //                     "{} = $2, {} = $3, created_at = $4",
+    //                     self.sequence_number_column(),
+    //                     self.snapshot_payload_column()
+    //                 )
+    //                 .as_str(),
+    //             )
+    //             .where_clause(self.where_persistence_id())
+    //             .to_string()
+    //     })
+    // }
 
     #[allow(dead_code)]
     #[inline]

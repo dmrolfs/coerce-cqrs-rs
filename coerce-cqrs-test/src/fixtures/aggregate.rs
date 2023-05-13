@@ -109,6 +109,18 @@ pub struct TestAggregateSnapshot {
 #[derive(Debug, Default, Clone, Label, PartialEq, Eq)]
 pub struct TestAggregate {
     state: TestState,
+    sequence: i64,
+    snapshot_after: Option<i64>,
+}
+
+impl TestAggregate {
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn with_snapshots(self, snapshot_after: i64) -> Self {
+        Self {
+            snapshot_after: Some(snapshot_after),
+            ..self
+        }
+    }
 }
 
 impl fmt::Display for TestAggregate {
@@ -159,19 +171,44 @@ impl Handler<TestCommand> for TestAggregate {
             Err(err) => return err.into(),
         };
 
-        for event in events.iter() {
-            if let Err(error) = self.persist(event, ctx).await {
+        debug!("[{}] RESULTING EVENTS: {events:?}", ctx.id());
+        for event in events.into_iter() {
+            debug!("[{}] PERSISTING event: {event:?}", ctx.id());
+            if let Err(error) = self.persist(&event, ctx).await {
+                error!(?event, "[{}] failed to persist event: {error:?}", ctx.id());
                 return error.into();
+            }
+
+            debug!("[{}] APPLYING event: {event:?}", ctx.id());
+            if let Some(new_state) = self.state.apply_event(event, ctx) {
+                self.state = new_state;
+            }
+
+            self.sequence += 1;
+            if let Some(snapshot_after) = self.snapshot_after {
+                if self.sequence % snapshot_after == 0 {
+                    let snapshot = TestAggregateSnapshot {
+                        state: self.state.clone(),
+                    };
+                    debug!(
+                        ?snapshot,
+                        "[{}] TAKING A SNAPSHOT after {} events...",
+                        ctx.id(),
+                        self.sequence
+                    );
+                    if let Err(error) = self.snapshot(snapshot, ctx).await {
+                        error!(
+                            %snapshot_after,
+                            "[{}] failed to snapshot event at sequence: {}",
+                            ctx.id(), self.sequence
+                        );
+                        return error.into();
+                    }
+                }
             }
         }
 
         // perform 0.. side effect tasks
-
-        events.into_iter().for_each(|event| {
-            if let Some(new_state) = self.state.apply_event(event, ctx) {
-                self.state = new_state;
-            }
-        });
 
         // determine result corresponding to command handling
         CommandResult::ok(self.to_string())
@@ -227,6 +264,7 @@ impl ApplyAggregateEvent<TestEvent> for TestAggregate {
 impl Recover<TestEvent> for TestAggregate {
     #[instrument(level = "debug", skip(ctx))]
     async fn recover(&mut self, event: TestEvent, ctx: &mut ActorContext) {
+        info!("[{}] RECOVERING from EVENT: {event:?}", ctx.id());
         if let Some(new_type) = self.apply_event(event, ctx) {
             *self = new_type;
         }
@@ -235,8 +273,9 @@ impl Recover<TestEvent> for TestAggregate {
 
 #[async_trait]
 impl RecoverSnapshot<TestAggregateSnapshot> for TestAggregate {
-    #[instrument(level = "debug", skip(_ctx))]
-    async fn recover(&mut self, snapshot: TestAggregateSnapshot, _ctx: &mut ActorContext) {
+    #[instrument(level = "debug", skip(ctx))]
+    async fn recover(&mut self, snapshot: TestAggregateSnapshot, ctx: &mut ActorContext) {
+        info!("[{}] RECOVERING from SNAPSHOT: {snapshot:?}", ctx.id());
         self.state = snapshot.state;
     }
 }
