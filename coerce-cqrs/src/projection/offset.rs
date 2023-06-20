@@ -1,8 +1,6 @@
-use crate::projection::{PersistenceId, ProjectionError, ProjectionId};
 use iso8601_timestamp::Timestamp;
 use std::cmp::Ordering;
 use std::fmt;
-use std::sync::Arc;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Offset(Timestamp, i64);
@@ -59,57 +57,100 @@ impl PartialOrd for Offset {
     }
 }
 
-pub type OffsetStorageRef = Arc<dyn OffsetStorage>;
-
-#[async_trait]
-pub trait OffsetStorage {
-    /// Returns the sequence number from which to start the next processor pull.
-    async fn read_offset(
-        &self,
-        projection_id: &ProjectionId,
-        persistence_id: &PersistenceId,
-    ) -> Result<Option<Offset>, ProjectionError>;
-
-    /// Saves the sequence number from which to start the next processor pull.
-    async fn save_offset(
-        &self,
-        projection_id: &ProjectionId,
-        persistence_id: &PersistenceId,
-        offset: Offset,
-    ) -> Result<(), ProjectionError>;
-}
-
-#[derive(Debug, Default)]
-pub struct InMemoryOffsetStorage {
-    inner: Arc<dashmap::DashMap<(ProjectionId, PersistenceId), Offset>>,
-}
-
-#[async_trait]
-impl OffsetStorage for InMemoryOffsetStorage {
-    #[instrument(level = "debug")]
-    async fn read_offset(
-        &self,
-        projection_id: &ProjectionId,
-        persistence_id: &PersistenceId,
-    ) -> Result<Option<Offset>, ProjectionError> {
-        let key = (projection_id.clone(), persistence_id.clone());
-        let key_rep = format!("({}-{:#})", key.0, key.1);
-        let offset = Ok(self.inner.get(&key).map(|offset| *offset.value()));
-        debug!("read_offset [{key_rep}] = {offset:?}");
-        offset
-    }
-
-    #[instrument(level = "debug")]
-    async fn save_offset(
-        &self,
-        projection_id: &ProjectionId,
-        persistence_id: &PersistenceId,
-        offset: Offset,
-    ) -> Result<(), ProjectionError> {
-        let key = (projection_id.clone(), persistence_id.clone());
-        let key_rep = format!("({}-{:#})", key.0, key.1);
-        let prior_offset = self.inner.insert(key, offset);
-        debug!("save_offset [{key_rep}] = {offset:?} was {prior_offset:?}");
-        Ok(())
-    }
-}
+// pub type OffsetStorageRef = Arc<dyn OffsetStorage>;
+//
+// pub type AggregateOffsets = HashMap<PersistenceId, Offset>;
+//
+// #[async_trait]
+// pub trait OffsetStorage {
+//     /// Returns all of the offsets seen by the processor. When the processor pull the next batch of,
+//     /// messages it must take care to include new aggregates not yet seen.
+//     async fn read_all_offsets(
+//         &self,
+//         projection_name: &str,
+//     ) -> Result<AggregateOffsets, ProjectionError>;
+//
+//     /// Returns the sequence number from which to start the next processor pull.
+//     async fn read_offset(
+//         &self,
+//         projection_name: &str,
+//         persistence_id: &PersistenceId,
+//     ) -> Result<Option<Offset>, ProjectionError>;
+//
+//     /// Saves the sequence number from which to start the next processor pull.
+//     async fn save_offset(
+//         &self,
+//         projection_name: &str,
+//         persistence_id: &PersistenceId,
+//         offset: Offset,
+//     ) -> Result<(), ProjectionError>;
+// }
+//
+// #[derive(Debug, Default)]
+// pub struct InMemoryOffsetStorage {
+//     inner: Arc<dashmap::DashMap<String, dashmap::DashMap<PersistenceId, Offset>>>,
+// }
+//
+// #[async_trait]
+// impl OffsetStorage for InMemoryOffsetStorage {
+//     #[instrument(level = "debug")]
+//     async fn read_all_offsets(
+//         &self,
+//         projection_name: &str,
+//     ) -> Result<AggregateOffsets, ProjectionError> {
+//         let result = self
+//             .inner
+//             .get(projection_name)
+//             .map(|agg_offsets| agg_offsets.value().clone())
+//             .map(|offsets| offsets.into_iter().collect())
+//             .unwrap_or_default();
+//
+//         Ok(result)
+//     }
+//
+//     #[instrument(level = "debug")]
+//     async fn read_offset(
+//         &self,
+//         projection_name: &str,
+//         persistence_id: &PersistenceId,
+//     ) -> Result<Option<Offset>, ProjectionError> {
+//         let result = self.inner.get(projection_name).and_then(|offsets| {
+//             offsets
+//                 .get(persistence_id)
+//                 .map(|offset_ref| *offset_ref.value())
+//         });
+//
+//         debug!("read_offset [{projection_name}::{persistence_id}] = {result:?}");
+//         Ok(result)
+//
+//         // let key = (projection_id.clone(), persistence_id.clone());
+//         // let key_rep = format!("({}-{:#})", key.0, key.1);
+//         // let offset = Ok(self.inner.get(&key).map(|offset| *offset.value()));
+//         // debug!("read_offset [{key_rep}] = {offset:?}");
+//         // offset
+//     }
+//
+//     #[instrument(level = "debug")]
+//     async fn save_offset(
+//         &self,
+//         projection_name: &str,
+//         persistence_id: &PersistenceId,
+//         offset: Offset,
+//     ) -> Result<(), ProjectionError> {
+//         let prior_offset = self
+//             .inner
+//             .get(projection_name)
+//             .and_then(|offsets| offsets.insert(persistence_id.clone(), offset));
+//
+//         debug!(
+//             "save_offset [{projection_name}::{persistence_id}] = {offset:?} was {prior_offset:?}"
+//         );
+//         Ok(())
+//
+//         // let key = (projection_id.clone(), persistence_id.clone());
+//         // let key_rep = format!("({}-{:#})", key.0, key.1);
+//         // let prior_offset = self.inner.insert(key, offset);
+//         // debug!("save_offset [{key_rep}] = {offset:?} was {prior_offset:?}");
+//         // Ok(())
+//     }
+// }

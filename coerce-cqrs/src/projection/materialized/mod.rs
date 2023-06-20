@@ -1,10 +1,10 @@
-mod view_applicator;
-mod view_memory_storage;
-mod view_storage;
+mod projection_applicator;
+mod projection_memory_storage;
+mod projection_storage;
 
-pub use view_applicator::ViewApplicator;
-pub use view_memory_storage::InMemoryViewStorage;
-pub use view_storage::ViewStorage;
+pub use projection_applicator::ProjectionApplicator;
+pub use projection_memory_storage::InMemoryProjectionStorage;
+pub use projection_storage::ProjectionStorage;
 
 // use serde::{Deserialize, Serialize};
 // use smol_str::SmolStr;

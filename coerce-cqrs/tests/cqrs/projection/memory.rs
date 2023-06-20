@@ -6,11 +6,10 @@ use coerce::actor::IntoActor;
 use coerce::persistent::journal::provider::StorageProvider;
 use coerce::persistent::Persistence;
 use coerce_cqrs::memory::InMemoryStorageProvider;
-use coerce_cqrs::projection::RegularInterval;
 use coerce_cqrs::projection::{
-    InMemoryOffsetStorage, InMemoryViewStorage, OffsetStorage, PersistenceId, Processor,
-    ProjectionId, ViewApplicator, ViewStorage,
+    InMemoryProjectionStorage, PersistenceId, Processor, ProjectionApplicator, ProjectionStorage,
 };
+use coerce_cqrs::projection::{ProcessorSourceProvider, RegularInterval};
 use coerce_cqrs_test::fixtures::aggregate::{
     self, Summarize, TestAggregate, TestCommand, TestEvent, TestState, TestView,
 };
@@ -26,26 +25,28 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
     let _main_span_guard = main_span.enter();
 
     let system = ActorSystem::new();
-    let view_storage = Arc::new(InMemoryViewStorage::<TestView>::new("test_load_and_save"));
-    let view_apply = ViewApplicator::new(view_storage.clone(), aggregate::apply_test_event_to_view);
-    let storage_provider = InMemoryStorageProvider::new();
+    let view_storage = Arc::new(InMemoryProjectionStorage::<TestView>::new(
+        "test_load_and_save",
+    ));
+    let view_apply =
+        ProjectionApplicator::new(view_storage.clone(), aggregate::apply_test_event_to_view);
+    let storage_provider = InMemoryStorageProvider::default();
     let storage = storage_provider
-        .journal_storage()
-        .ok_or_else(|| anyhow!("no journal storage!"))?;
+        .processor_source()
+        .ok_or_else(|| anyhow!("no processor storage!"))?;
     let system = system.to_persistent(Persistence::from(storage_provider));
 
-    let offset_storage = Arc::new(InMemoryOffsetStorage::default());
+    // let offset_storage = Arc::new(InMemoryOffsetStorage::default());
 
     let aid = TestAggregate::next_id();
     let pid = PersistenceId::from_aggregate_id::<TestAggregate>(aid.id.as_str());
-    let vid = view_storage.view_id_from_persistence(&pid);
+    let vid = pid.clone();
 
-    let processor =
-        Processor::builder_for::<TestAggregate, _, _, _>("test_memory_projection", aid.id.as_str())
-            .with_entry_handler(view_apply)
-            .with_source(storage.clone())
-            .with_offset_storage(offset_storage.clone())
-            .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(50)));
+    let processor = Processor::builder_for::<TestAggregate, _, _>("test_memory_projection")
+        .with_entry_handler(view_apply)
+        .with_source(storage.clone())
+        // .with_offset_storage(offset_storage.clone())
+        .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(50)));
 
     let processor = assert_ok!(processor.finish());
     let processor = assert_ok!(processor.run());
@@ -103,11 +104,12 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
     tracing::info!("**** WAKE");
 
     tracing::info!("**** LOAD VIEW...");
-    let view = assert_some!(assert_ok!(view_storage.load_view(&vid).await));
+    let view = assert_some!(assert_ok!(view_storage.load_projection(&vid).await));
     assert_eq!(
         view,
         TestView {
             label: "tests starting now!... now... now".to_string(),
+            count: 6,
             sum: 11,
         }
     );
@@ -134,14 +136,14 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
         ]
     );
 
-    info!("**** EXAMINE OFFSET");
-    let offset = assert_some!(assert_ok!(
-        offset_storage
-            .read_offset(&ProjectionId::new("test_memory_projection"), &pid)
-            .await
-    ));
-    tracing::info!("**** after tests offset: {offset:?}");
-    assert_eq!(offset.as_i64(), 6);
+    // info!("**** EXAMINE OFFSET");
+    // let offset = assert_some!(assert_ok!(
+    //     offset_storage
+    //         .read_offset("test_memory_projection", &pid)
+    //         .await
+    // ));
+    // tracing::info!("**** after tests offset: {offset:?}");
+    // assert_eq!(offset.as_i64(), 6);
 
     tracing::info!("**** STOP PROCESSOR...");
     assert_ok!(coerce_cqrs::projection::ProcessorCommand::stop(&stop_api).await);

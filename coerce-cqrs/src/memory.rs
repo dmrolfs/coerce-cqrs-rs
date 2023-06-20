@@ -1,14 +1,54 @@
+use crate::projection::{
+    AggregateEntries, AggregateSequences, PersistenceId, ProcessorSource, ProcessorSourceProvider,
+    ProcessorSourceRef,
+};
+use anyhow::Context;
 use coerce::persistent::journal::provider::StorageProvider;
 use coerce::persistent::journal::storage::{JournalEntry, JournalStorage, JournalStorageRef};
 use parking_lot::RwLock;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::str::FromStr;
 use std::sync::Arc;
 
 //todo: remove in favor of coerce::persistent::journal::inmemory
 //todo: copy retained here only until unit tests suite completed
 //      for crate persistence and projection parts.
+
+#[derive(Debug)]
+pub struct InMemoryStorageProvider {
+    store: Arc<InMemoryJournalStorage>,
+}
+
+impl Default for InMemoryStorageProvider {
+    fn default() -> Self {
+        // let storage_key_codec = Arc::new(SimpleStorageKeyCodec::default());
+        Self {
+            store: Arc::new(InMemoryJournalStorage::default()), //storage_key_codec)),
+        }
+    }
+}
+// #[allow(dead_code)]
+// impl InMemoryStorageProvider {
+//     pub fn new() -> Self {
+//         Self {
+//             store: Arc::new(InMemoryJournalStorage::new(offset_storage)),
+//         }
+//     }
+// }
+
+impl StorageProvider for InMemoryStorageProvider {
+    fn journal_storage(&self) -> Option<JournalStorageRef> {
+        Some(self.store.clone())
+    }
+}
+
+impl ProcessorSourceProvider for InMemoryStorageProvider {
+    fn processor_source(&self) -> Option<ProcessorSourceRef> {
+        Some(self.store.clone())
+    }
+}
 
 #[derive(Debug)]
 struct ActorJournal {
@@ -42,23 +82,75 @@ impl ActorJournal {
 #[derive(Debug, Default)]
 pub struct InMemoryJournalStorage {
     store: RwLock<HashMap<String, ActorJournal>>,
+    // storage_key_codec: Arc<dyn StorageKeyCodec>,
 }
 
-#[derive(Debug, Default)]
-pub struct InMemoryStorageProvider {
-    store: Arc<InMemoryJournalStorage>,
-}
+// impl Default for InMemoryJournalStorage {
+//     fn default() -> Self {
+//         Self {
+//             store: Default::default(),
+//             // storage_key_codec: Arc::new(SimpleStorageKeyCodec::default()),
+//         }
+//     }
+// }
 
-#[allow(dead_code)]
-impl InMemoryStorageProvider {
-    pub fn new() -> Self {
-        Self::default()
+// impl InMemoryJournalStorage {
+//     // pub fn new(storage_key_codec: Arc<dyn StorageKeyCodec>) -> Self {
+//     pub fn new() -> Self {
+//         Self {
+//             store: Default::default(),
+//             // storage_key_codec,
+//         }
+//     }
+// }
+
+#[async_trait]
+impl ProcessorSource for InMemoryJournalStorage {
+    // async fn read_storage_keys(&self) -> anyhow::Result<Vec<StorageKey>> {
+    //     let store = self.store.read();
+    //     Ok(store.keys().cloned().map(StorageKey::new).collect())
+    // }
+
+    async fn read_persistence_ids(&self) -> anyhow::Result<Vec<PersistenceId>> {
+        let store = self.store.read();
+        store
+            .keys()
+            .map(|k| {
+                PersistenceId::from_str(k.as_str())
+                    .with_context(|| format!("failed to parse postgres persistence_id from {k}"))
+            })
+            .collect()
     }
-}
 
-impl StorageProvider for InMemoryStorageProvider {
-    fn journal_storage(&self) -> Option<JournalStorageRef> {
-        Some(self.store.clone())
+    #[instrument(level = "debug")]
+    async fn read_bulk_latest_messages(
+        &self,
+        sequences: AggregateSequences,
+    ) -> anyhow::Result<Option<AggregateEntries>> {
+        let mut result = HashMap::with_capacity(sequences.len());
+        for (persistence_id, sequence) in sequences {
+            let latest_entries = self
+                .read_latest_messages(&persistence_id.as_persistence_id(), sequence.unwrap_or(0))
+                .await?;
+
+            debug!("{persistence_id}[{sequence:?}] latest messages: {latest_entries:?}");
+
+            if let Some(entries) = latest_entries {
+                // debug!("DMR - AAA");
+                // let key_parts = self.storage_key_codec.key_into_parts(persistence_id.clone());
+                // debug!("DMR(temp): persistence_id of {storage_key} = {key_parts:?}");
+                // let persistence_id = key_parts?.1;
+
+                // let (_, persistence_id, _) = self.storage_key_codec.key_into_parts(storage_key.clone())?;
+                result.insert(persistence_id, entries);
+            }
+        }
+
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(result))
+        }
     }
 }
 
@@ -144,7 +236,7 @@ impl JournalStorage for InMemoryJournalStorage {
                         .messages
                         .iter()
                         .enumerate()
-                        .find(|(_index, j)| j.sequence > from_sequence)
+                        .find(|(_index, j)| from_sequence < j.sequence) //todo: test off by one
                         .map(|(index, j)| {
                             debug!(sequence=%j.sequence, %from_sequence, "found starting message: {index}");
                             index
@@ -173,8 +265,7 @@ impl JournalStorage for InMemoryJournalStorage {
         persistence_id: &str,
         sequence_id: i64,
     ) -> anyhow::Result<Option<JournalEntry>> {
-        let store = self.store.read();
-        let message = store.get(persistence_id).and_then(|journal| {
+        let message = self.store.read().get(persistence_id).and_then(|journal| {
             journal
                 .messages
                 .iter()
@@ -190,8 +281,8 @@ impl JournalStorage for InMemoryJournalStorage {
         from_sequence: i64,
         to_sequence: i64,
     ) -> anyhow::Result<Option<Vec<JournalEntry>>> {
-        let store = self.store.read();
-        match store.get(persistence_id) {
+        #[allow(clippy::significant_drop_in_scrutinee)]
+        match self.store.read().get(persistence_id) {
             None => Ok(None),
             Some(journal) if journal.messages.is_empty() => Ok(None),
             Some(journal) => {
@@ -269,8 +360,7 @@ impl JournalStorage for InMemoryJournalStorage {
 
     #[instrument(level = "debug")]
     async fn delete_all(&self, persistence_id: &str) -> anyhow::Result<()> {
-        let mut store = self.store.write();
-        store.remove(persistence_id);
+        self.store.write().remove(persistence_id);
         Ok(())
     }
 }

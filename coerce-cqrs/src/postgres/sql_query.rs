@@ -4,10 +4,12 @@ use smol_str::SmolStr;
 use sql_query_builder as sql;
 use std::fmt;
 
+const PROJECTION_ID_COL: &str = "projection_id";
 const PERSISTENCE_ID_COL: &str = "persistence_id";
 const SEQUENCE_NR_COL: &str = "sequence_number";
 const EVENT_MANIFEST_COL: &str = "event_manifest";
 const EVENT_PAYLOAD_COL: &str = "event_payload";
+const CURRENT_OFFSET_COL: &str = "current_offset";
 const SNAPSHOT_MANIFEST_COL: &str = "snapshot_manifest";
 const SNAPSHOT_PAYLOAD_COL: &str = "snapshot_payload";
 
@@ -51,6 +53,11 @@ static SNAPSHOTS_VALUES_REP: Lazy<String> = Lazy::new(|| {
 pub struct SqlQueryFactory {
     event_journal_table: SmolStr,
     snapshots_table: Option<SmolStr>,
+    offsets_table: SmolStr,
+
+    offsets_projection_id_column: SmolStr,
+    offsets_persistence_id_column: SmolStr,
+    offsets_current_offset_column: SmolStr,
 
     persistence_id_column: SmolStr,
     sequence_nr_column: SmolStr,
@@ -62,8 +69,11 @@ pub struct SqlQueryFactory {
     snapshot_payload_column: SmolStr,
 
     where_persistence_id: OnceCell<String>,
+
+    select_persistence_ids: OnceCell<String>,
     select_event: OnceCell<String>,
     select_events_range: OnceCell<String>,
+    // select_all_latest_events: OnceCell<String>,
     select_latest_events: OnceCell<String>,
     append_event: OnceCell<String>,
     delete_event: OnceCell<String>,
@@ -87,10 +97,15 @@ impl fmt::Debug for SqlQueryFactory {
 }
 
 impl SqlQueryFactory {
-    pub fn new(event_journal_table: &str) -> Self {
+    pub fn new(event_journal_table: &str, offsets_table: &str) -> Self {
         Self {
             event_journal_table: SmolStr::new(event_journal_table),
             snapshots_table: None,
+            offsets_table: SmolStr::new(offsets_table),
+
+            offsets_projection_id_column: SmolStr::new(PROJECTION_ID_COL),
+            offsets_persistence_id_column: SmolStr::new(PERSISTENCE_ID_COL),
+            offsets_current_offset_column: SmolStr::new(CURRENT_OFFSET_COL),
             persistence_id_column: SmolStr::new(PERSISTENCE_ID_COL),
             sequence_nr_column: SmolStr::new(SEQUENCE_NR_COL),
             event_manifest_column: SmolStr::new(EVENT_MANIFEST_COL),
@@ -98,8 +113,10 @@ impl SqlQueryFactory {
             snapshot_manifest_column: SmolStr::new(SNAPSHOT_MANIFEST_COL),
             snapshot_payload_column: SmolStr::new(SNAPSHOT_PAYLOAD_COL),
             where_persistence_id: OnceCell::new(),
+            select_persistence_ids: OnceCell::new(),
             select_event: OnceCell::new(),
             select_events_range: OnceCell::new(),
+            // select_all_latest_events: OnceCell::new(),
             select_latest_events: OnceCell::new(),
             append_event: OnceCell::new(),
             delete_event: OnceCell::new(),
@@ -210,6 +227,16 @@ impl SqlQueryFactory {
     }
 
     #[inline]
+    pub fn select_persistence_ids(&self) -> &str {
+        self.select_persistence_ids.get_or_init(|| {
+            sql::Select::new()
+                .select(format!("DISTINCT {}", self.persistence_id_column()).as_str())
+                .from(self.event_journal_table())
+                .to_string()
+        })
+    }
+
+    #[inline]
     pub fn select_event(&self) -> &str {
         self.select_event.get_or_init(|| {
             sql::Select::new()
@@ -238,6 +265,51 @@ impl SqlQueryFactory {
                 .to_string()
         })
     }
+
+    // #[inline]
+    // pub fn select_all_latest_events(&self) -> &str {
+    //     // SELECT offsets.projection_id, journal.*
+    //     // FROM public.event_journal AS journal
+    //     // LEFT JOIN public.projection_offset AS offsets ON journal.persistence_id = offsets.persistence_id
+    //     // WHERE offsets.projection_id = $1 AND journal.sequence_number >= COALESCE(offsets.current_offset, 0);
+    //
+    //     // SELECT *
+    //     // FROM public.event_journal
+    //     // WHERE persistence_id == $
+    //
+    //     self.select_all_latest_events.get_or_init(|| {
+    //         sql::Select::new()
+    //
+    //
+    //
+    //
+    //         let ej_columns = EVENT_COLUMNS
+    //             .iter()
+    //             .map(|c| format!("journal.{c}"))
+    //             .collect::<Vec<_>>();
+    //
+    //         let mut columns = vec![format!("offsets.{}", self.offsets_projection_id_column)];
+    //         columns.extend(ej_columns);
+    //         let columns = columns.join(", ");
+    //
+    //         sql::Select::new()
+    //             .select(&columns)
+    //             .from(&format!("{} AS journal", self.event_journal_table()))
+    //             .left_join(&format!(
+    //                 "{} AS offsets ON journal.{} = offsets.{}",
+    //                 self.offsets_table,
+    //                 self.persistence_id_column,
+    //                 self.offsets_persistence_id_column
+    //             ))
+    //             .where_clause(&format!(
+    //                 "offsets.{} = $1 AND journal.{} >= COALESCE(offsets.{}, 0)",
+    //                 self.offsets_projection_id_column,
+    //                 self.sequence_number_column(),
+    //                 self.offsets_current_offset_column
+    //             ))
+    //             .to_string()
+    //     })
+    // }
 
     #[inline]
     pub fn select_latest_events(&self) -> &str {

@@ -6,17 +6,19 @@ mod processor;
 
 pub use commit_action::PostCommitAction;
 pub use event_envelope::EventEnvelope;
-pub use materialized::{InMemoryViewStorage, ViewApplicator, ViewStorage};
-pub use offset::{InMemoryOffsetStorage, Offset, OffsetStorage, OffsetStorageRef};
+pub use materialized::{InMemoryProjectionStorage, ProjectionApplicator, ProjectionStorage};
+pub use offset::Offset;
 pub use processor::{
-    CalculateInterval, CalculateIntervalFactory, ExponentialBackoff, Processor, ProcessorApi,
-    ProcessorCommand, ProcessorErrorHandler, RegularInterval,
+    AggregateEntries, AggregateOffsets, AggregateSequences, CalculateInterval, CalculateIntervalFactory,
+    ExponentialBackoff, Processor, ProcessorApi, ProcessorCommand, ProcessorErrorHandler,
+    ProcessorSource, ProcessorSourceProvider, ProcessorSourceRef, RegularInterval,
 };
 use std::collections::HashMap;
 
 use coerce::persistent::PersistentActor;
 use smol_str::SmolStr;
 use std::fmt;
+use std::str::FromStr;
 use tagid::{Entity, Id, IdGenerator};
 use thiserror::Error;
 
@@ -41,6 +43,21 @@ impl PersistenceId {
 
     pub fn as_persistence_id(&self) -> String {
         format!("{self:#}") // delegate to alternate Display format
+    }
+}
+
+impl FromStr for PersistenceId {
+    type Err = ProjectionError;
+
+    fn from_str(rep: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<_> = rep.split(PERSISTENCE_ID_DELIMITER).collect();
+        if parts.len() != 2 {
+            return Err(ProjectionError::Id(rep.to_string()));
+        }
+
+        let aggregate_name = parts[0];
+        let aggregate_id = parts[1];
+        Ok(Self::from_parts(aggregate_name, aggregate_id))
     }
 }
 
@@ -79,46 +96,46 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub struct ProjectionId(SmolStr);
-
-impl fmt::Display for ProjectionId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl ProjectionId {
-    pub fn new(id: impl AsRef<str>) -> Self {
-        Self(SmolStr::new(id.as_ref()))
-    }
-}
-
-impl From<String> for ProjectionId {
-    fn from(id: String) -> Self {
-        Self::new(id)
-    }
-}
-
-impl From<&str> for ProjectionId {
-    fn from(id: &str) -> Self {
-        Self::new(id)
-    }
-}
-
-impl From<SmolStr> for ProjectionId {
-    fn from(id: SmolStr) -> Self {
-        Self::new(id.as_str())
-    }
-}
-
-impl AsRef<str> for ProjectionId {
-    fn as_ref(&self) -> &str {
-        self.0.as_str()
-    }
-}
+// #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+// #[repr(transparent)]
+// #[serde(transparent)]
+// pub struct ProjectionId(SmolStr);
+//
+// impl fmt::Display for ProjectionId {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "{}", self.0)
+//     }
+// }
+//
+// impl ProjectionId {
+//     pub fn new(id: impl AsRef<str>) -> Self {
+//         Self(SmolStr::new(id.as_ref()))
+//     }
+// }
+//
+// impl From<String> for ProjectionId {
+//     fn from(id: String) -> Self {
+//         Self::new(id)
+//     }
+// }
+//
+// impl From<&str> for ProjectionId {
+//     fn from(id: &str) -> Self {
+//         Self::new(id)
+//     }
+// }
+//
+// impl From<SmolStr> for ProjectionId {
+//     fn from(id: SmolStr) -> Self {
+//         Self::new(id.as_str())
+//     }
+// }
+//
+// impl AsRef<str> for ProjectionId {
+//     fn as_ref(&self) -> &str {
+//         self.0.as_str()
+//     }
+// }
 
 #[async_trait]
 pub trait EventProcessor<E> {
@@ -126,8 +143,9 @@ pub trait EventProcessor<E> {
     async fn process(&self, event: EventEnvelope<E>) -> Result<(), Self::Error>;
 }
 
-pub const META_TABLE: &str = "table";
-pub const META_PROJECTION_ID: &str = "projection_id";
+pub const META_VIEW_TABLE: &str = "view_table";
+pub const META_OFFSET_TABLE: &str = "offset_table";
+pub const META_PROJECTION_NAME: &str = "projection_name";
 pub const META_PERSISTENCE_ID: &str = "persistence_id";
 
 #[derive(Debug, Error)]
@@ -146,6 +164,9 @@ pub enum ProjectionError {
 
     #[error("{0}")]
     MessageUnwrap(#[from] coerce::actor::message::MessageUnwrapErr),
+
+    #[error("Invalid persistence_id: {0}")]
+    Id(String),
 
     #[error("meta:{meta:?}, {cause}")]
     Storage {

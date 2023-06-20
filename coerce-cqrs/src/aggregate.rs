@@ -75,10 +75,11 @@ pub enum AggregateError {
 
 #[cfg(test)]
 mod tests {
+    use crate::postgres::PostgresStorageConfig;
+    use crate::projection::ProcessorSourceProvider;
     use claim::{assert_ok, assert_some};
     use coerce::actor::system::ActorSystem;
     use coerce::actor::IntoActor;
-    use coerce::persistent::journal::provider::StorageProvider;
     use coerce::persistent::Persistence;
     use coerce_cqrs_test::fixtures::actor::{Msg, TestActor};
     use once_cell::sync::Lazy;
@@ -94,17 +95,17 @@ mod tests {
         tracing::info!("entering tests...");
         tokio_test::block_on(async move {
             let provider_system = ActorSystem::new();
-            let provider_config = crate::postgres::PostgresStorageConfig {
-                key_prefix: "tests:".to_string(),
+            let provider_config = PostgresStorageConfig {
+                key_prefix: "tests".to_string(),
                 username: "postgres".to_string(),
                 password: secrecy::Secret::new("demo_pass".to_string()),
                 host: "localhost".to_string(),
                 port: 5432,
                 database_name: "demo_cqrs_db".to_string(),
-                event_journal_table_name:
-                    crate::postgres::PostgresStorageConfig::default_event_journal_table(),
-                snapshot_table_name: crate::postgres::PostgresStorageConfig::default_snapshot_table(
-                ),
+                event_journal_table_name: PostgresStorageConfig::default_event_journal_table(),
+                projection_offsets_table_name:
+                    PostgresStorageConfig::default_projection_offsets_table(),
+                snapshot_table_name: PostgresStorageConfig::default_snapshot_table(),
                 require_ssl: false,
                 min_connections: None,
                 max_connections: None,
@@ -119,7 +120,7 @@ mod tests {
                 )
                 .await
             );
-            let storage = assert_some!(storage_provider.journal_storage());
+            let storage = assert_some!(storage_provider.processor_source());
             let system = ActorSystem::new().to_persistent(Persistence::from(storage_provider));
             let create_empty_actor = TestActor::default;
 

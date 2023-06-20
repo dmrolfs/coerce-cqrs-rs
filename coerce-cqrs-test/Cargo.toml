@@ -14,16 +14,16 @@ categories = ["actor", "event", "cqrs"]
 
 [dependencies]
 coerce-cqrs = { path = "../coerce-cqrs" }
-coerce = { version = "0.8.8", features = ["full",] }
+coerce = { version = "0.8.10", features = ["full",] }
 coerce-macros = "0.2.0"
 
-anyhow = "1.0.70"
+anyhow = "1.0.71"
 async-trait = "0.1.68"
 dashmap = "5.4.0"
 #delegate = "0.9.0"
 futures = "0.3.28"
-iso8601-timestamp = "0.2.10"
-once_cell = "1.17.1"
+iso8601-timestamp = "0.2.11"
+once_cell = "1.18.0"
 #rand = "0.8.5"
 parking_lot = "0.12.1"
 pretty-type-name = "1.0.1"
@@ -35,24 +35,24 @@ pretty-type-name = "1.0.1"
 pretty_assertions = "1.3.0"
 rand = "0.8.5"
 secrecy = { version = "0.8.0", features = ["serde"] }
-serde = { version = "1.0.160", features = ["derive", "rc"] }
-serde_json = "1.0.96"
+serde = { version = "1.0.164", features = ["derive", "rc"] }
+serde_json = "1.0.97"
 #sha2 = "0.10.6"
 smol_str = { version = "0.2.0", features = ["serde"] }
-sql_query_builder = { version = "1.0.2", features = ["postgresql"] }
+sql_query_builder = { version = "1.1.4", features = ["postgresql"] }
 sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-rustls"] }
-strum = "0.24.1"
-strum_macros = "0.24.3"
+strum = "0.25.0"
+strum_macros = "0.25.0"
 tagid = { git = "https://github.com/dmrolfs/tagid-rs", features = ["envelope"] }
 thiserror = "1.0.40"
-tokio = { version = "1.28.0", features = ["full"] }
+tokio = { version = "1.28.2", features = ["full"] }
 tokio-stream = "0.1.14"
 tokio-util = { version = "0.7.8", features = ["full"] }
-tracing = { version = "0.1.38", features = ["valuable"] }
+tracing = { version = "0.1.37", features = ["valuable"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "json"] }
 tracing-bunyan-formatter = "0.3.7"
 tracing-log = "0.1.3"
-uuid = { version = "1.3.1", features = ["serde", "v4"] }
+uuid = { version = "1.3.4", features = ["serde", "v4"] }
 valuable = { version = "0.1.0", features = ["derive"] }
 
 #axum = { version = "0.6.8", features = ["query"] }
@@ -61,6 +61,6 @@ valuable = { version = "0.1.0", features = ["derive"] }
 
 [dev-dependencies]
 claim = { git = "https://github.com/dmrolfs/rust-claim", branch = "bump-autocfg-version" }
-serde_test = "1.0.160"
+serde_test = "1.0.164"
 static_assertions = "1.1.0"
 tokio-test = "0.4.2"

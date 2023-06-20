@@ -21,6 +21,8 @@ pub struct PostgresStorageConfig {
     pub database_name: String,
     #[serde(default = "PostgresStorageConfig::default_event_journal_table")]
     pub event_journal_table_name: String,
+    #[serde(default = "PostgresStorageConfig::default_projection_offsets_table")]
+    pub projection_offsets_table_name: String,
     #[serde(default = "PostgresStorageConfig::default_snapshot_table")]
     pub snapshot_table_name: String,
     pub require_ssl: bool,
@@ -45,7 +47,9 @@ impl PostgresStorageConfig {
     pub fn default_event_journal_table() -> String {
         "event_journal".to_string()
     }
-
+    pub fn default_projection_offsets_table() -> String {
+        "projection_offset".to_string()
+    }
     pub fn default_snapshot_table() -> String {
         "snapshots".to_string()
     }
