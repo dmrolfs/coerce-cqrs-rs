@@ -5,14 +5,17 @@ use coerce::actor::system::ActorSystem;
 use coerce::actor::IntoActor;
 use coerce::persistent::journal::provider::StorageProvider;
 use coerce::persistent::Persistence;
-use coerce_cqrs::postgres::{ PostgresProjectionStorage, PostgresStorageConfig, PostgresStorageProvider, };
-use coerce_cqrs::projection::{ PersistenceId, Processor, ProjectionApplicator, ProjectionStorage, };
+use coerce_cqrs::postgres::{
+    PostgresProjectionStorage, PostgresStorageConfig, PostgresStorageProvider,
+};
+use coerce_cqrs::projection::{PersistenceId, Processor, ProjectionApplicator, ProjectionStorage};
 use coerce_cqrs::projection::{ProcessorSourceProvider, RegularInterval};
 use coerce_cqrs::CommandResult;
 use coerce_cqrs_test::fixtures::aggregate::{
     self, Summarize, TestAggregate, TestCommand, TestEvent, TestState, TestView,
 };
 use once_cell::sync::Lazy;
+use pretty_assertions::assert_eq;
 use std::sync::Arc;
 use std::time::Duration;
 use tagid::Entity;
@@ -42,11 +45,15 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
         idle_timeout: None,
     };
 
-    let projection_name = "test_postgres_projection";
+    let aid = TestAggregate::next_id();
+    let pid = PersistenceId::from_aggregate_id::<TestAggregate>(aid.id.as_str());
+    let vid = pid.clone();
+
+    let projection_name = format!("test_postgres_projection-{pid}");
 
     let view_storage = assert_ok!(
         PostgresProjectionStorage::<TestView>::new(
-            projection_name,
+            &projection_name,
             "test_view",
             "projection_offset",
             &storage_config,
@@ -54,7 +61,7 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
         )
         .await
     );
-    assert_eq!(view_storage.name(), projection_name);
+    assert_eq!(view_storage.name(), &projection_name);
 
     let view_storage = Arc::new(view_storage);
     let view_apply =
@@ -69,15 +76,11 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     // let offset_storage =
     //     Arc::new(PostgresOffsetStorage::new("projection_offset", &storage_config, &system).await?);
 
-    let aid = TestAggregate::next_id();
-    let pid = PersistenceId::from_aggregate_id::<TestAggregate>(aid.id.as_str());
-    let vid = pid.clone();
-
     let processor = Processor::builder_for::<TestAggregate, _, _>(projection_name.clone())
         .with_entry_handler(view_apply)
         .with_source(storage.clone())
         // .with_offset_storage(offset_storage.clone())
-        .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(500)));
+        .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(50)));
 
     let processor = assert_ok!(processor.finish());
     let processor = assert_ok!(processor.run());
@@ -113,30 +116,38 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1]));
 
-    // tracing::info!("**** CMD - TEST-2");
-    // let reply = assert_ok!(actor.send(TestCommand::Test(2)).await);
-    // assert_eq!(reply, CommandResult::Ok("active:3".to_string()));
-    // let summary = assert_ok!(actor.send(Summarize::default()).await);
-    // assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2]));
-    //
-    // tracing::info!("**** SLEEP...");
-    // tokio::time::sleep(Duration::from_millis(400)).await;
-    // tracing::info!("**** WAKE");
-    //
-    // tracing::info!("**** CMD - TEST-3");
-    // let reply = assert_ok!(actor.send(TestCommand::Test(3)).await);
-    // assert_eq!(reply, CommandResult::Ok("active:6".to_string()));
-    // let summary = assert_ok!(actor.send(Summarize::default()).await);
-    // assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3,]));
-    //
-    // tracing::info!("**** CMD - TEST-5");
-    // let reply = assert_ok!(actor.send(TestCommand::Test(5)).await);
-    // assert_eq!(reply, CommandResult::Ok("active:11".to_string()));
-    // let summary = assert_ok!(actor.send(Summarize::default()).await);
-    // assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3, 5,]));
+    tracing::info!("**** CMD - TEST-2");
+    let reply = assert_ok!(actor.send(TestCommand::Test(2)).await);
+    assert_eq!(reply, CommandResult::Ok("active:3".to_string()));
+    let summary = assert_ok!(actor.send(Summarize::default()).await);
+    assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2]));
+
+    tracing::info!("**** SLEEP...");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    tracing::info!("**** WAKE");
+
+    tracing::info!("**** CMD - TEST-3");
+    let reply = assert_ok!(actor.send(TestCommand::Test(3)).await);
+    assert_eq!(reply, CommandResult::Ok("active:6".to_string()));
+    let summary = assert_ok!(actor.send(Summarize::default()).await);
+    assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3,]));
+
+    tracing::info!("**** SLEEP...");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    tracing::info!("**** WAKE");
+
+    tracing::info!("**** CMD - TEST-5");
+    let reply = assert_ok!(actor.send(TestCommand::Test(5)).await);
+    assert_eq!(reply, CommandResult::Ok("active:11".to_string()));
+    let summary = assert_ok!(actor.send(Summarize::default()).await);
+    assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3, 5,]));
+
+    tracing::info!("**** SLEEP...");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    tracing::info!("**** WAKE");
 
     tracing::info!("**** CMD - STOP");
-    let reply = assert_ok!(actor.send(TestCommand::Stop).await);
+    let _reply = assert_ok!(actor.send(TestCommand::Stop).await);
     // assert_eq!(reply, CommandResult::Ok("completed:11".to_string()));
     // let summary = assert_ok!(actor.send(Summarize::default()).await);
     // assert_eq!(summary, TestState::completed(DESCRIPTION, vec![1, 2, 3, 5]));
@@ -145,7 +156,7 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     assert_ok!(actor.stop().await);
 
     tracing::info!("**** SLEEP...");
-    tokio::time::sleep(Duration::from_millis(5000)).await;
+    tokio::time::sleep(Duration::from_millis(251)).await;
     tracing::info!("**** WAKE");
 
     tracing::info!("**** LOAD VIEW...");
@@ -154,15 +165,22 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
         view,
         TestView {
             label: "tests starting now!... now... now".to_string(),
-            count: 6,
+            count: 5,
             sum: 11,
+            events: vec![
+                TestEvent::Started("tests starting now!... now... now".to_string()),
+                TestEvent::Tested(1),
+                TestEvent::Tested(2),
+                TestEvent::Tested(3),
+                TestEvent::Tested(5),
+            ],
         }
     );
 
     info!("**** EXAMINE EVENTS");
 
     let events = assert_some!(assert_ok!(
-        storage.read_latest_messages(&format!("{:#}", pid), 0).await
+        storage.read_latest_messages(&format!("{}", pid.as_persistence_id()), 0).await
     ));
     let events: Vec<_> = events
         .into_iter()

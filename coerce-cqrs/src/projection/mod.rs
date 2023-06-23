@@ -9,20 +9,21 @@ pub use event_envelope::EventEnvelope;
 pub use materialized::{InMemoryProjectionStorage, ProjectionApplicator, ProjectionStorage};
 pub use offset::Offset;
 pub use processor::{
-    AggregateEntries, AggregateOffsets, AggregateSequences, CalculateInterval, CalculateIntervalFactory,
-    ExponentialBackoff, Processor, ProcessorApi, ProcessorCommand, ProcessorErrorHandler,
-    ProcessorSource, ProcessorSourceProvider, ProcessorSourceRef, RegularInterval,
+    AggregateEntries, AggregateOffsets, AggregateSequences, CalculateInterval,
+    CalculateIntervalFactory, ExponentialBackoff, Processor, ProcessorApi, ProcessorCommand,
+    ProcessorErrorHandler, ProcessorSource, ProcessorSourceProvider, ProcessorSourceRef,
+    RegularInterval,
 };
 use std::collections::HashMap;
 
 use coerce::persistent::PersistentActor;
 use smol_str::SmolStr;
-use std::fmt;
+use std::fmt::{self, Debug};
 use std::str::FromStr;
 use tagid::{Entity, Id, IdGenerator};
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PersistenceId {
     pub aggregate_name: SmolStr,
     pub id: SmolStr,
@@ -42,7 +43,9 @@ impl PersistenceId {
     }
 
     pub fn as_persistence_id(&self) -> String {
-        format!("{self:#}") // delegate to alternate Display format
+        // format!("{self}") // delegate to aggregate::id display form
+        // aggregate::id form
+        self.to_string()
     }
 }
 
@@ -66,14 +69,23 @@ pub const PERSISTENCE_ID_DELIMITER: &str = "::";
 impl fmt::Display for PersistenceId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if f.alternate() {
+            write!(f, "{}", self.id)
+        } else {
             write!(
                 f,
                 "{}{PERSISTENCE_ID_DELIMITER}{}",
                 self.aggregate_name, self.id
             )
-        } else {
-            write!(f, "{}", self.id)
         }
+    }
+}
+
+impl Debug for PersistenceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PersistenceId")
+            .field("aggregate_name", &self.aggregate_name)
+            .field("id", &self.id)
+            .finish()
     }
 }
 

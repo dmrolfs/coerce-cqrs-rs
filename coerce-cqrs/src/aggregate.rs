@@ -76,7 +76,7 @@ pub enum AggregateError {
 #[cfg(test)]
 mod tests {
     use crate::postgres::PostgresStorageConfig;
-    use crate::projection::ProcessorSourceProvider;
+    use crate::projection::{PersistenceId, ProcessorSourceProvider};
     use claim::{assert_ok, assert_some};
     use coerce::actor::system::ActorSystem;
     use coerce::actor::IntoActor;
@@ -131,8 +131,8 @@ mod tests {
                     .into_actor(Some(id.clone()), &system)
                     .await
             );
-            let pid = id.to_string();
-            let journal = storage.read_latest_messages(&pid, 0).await;
+            let pid: PersistenceId = id.clone().into();
+            let journal = storage.read_latest_messages(&pid.as_persistence_id(), 0).await;
             info!(?actor, ?journal, "**** before - actor and journal");
             assert_ok!(actor.notify(Msg(1)));
             assert_ok!(actor.notify(Msg(2)));

@@ -36,7 +36,7 @@ where
         self.name.as_str()
     }
 
-    #[instrument(level="debug", skip(self), fields(name=%self.name))]
+    #[instrument(level="debug", skip(self), fields(projection_name=%self.name))]
     async fn load_projection(
         &self,
         view_id: &Self::ViewId,
@@ -44,7 +44,7 @@ where
         Ok(self.view_store.get(view_id).map(|v| v.clone()))
     }
 
-    #[instrument(level="debug", skip(self), fields(name=%self.name))]
+    #[instrument(level="debug", skip(self), fields(projection_name=%self.name))]
     async fn save_projection(
         &self,
         view_id: &Self::ViewId,
@@ -72,6 +72,7 @@ where
         &self,
         _projection_name: &str,
     ) -> Result<AggregateOffsets, ProjectionError> {
+        debug!("DMR: All LAST_OFFSETS: {:?}", self.offset_store);
         Ok(self.offset_store.clone().into_iter().collect())
     }
 
@@ -88,7 +89,7 @@ where
 mod tests {
     use super::*;
     use claim::*;
-    use coerce_cqrs_test::fixtures::aggregate::TestView;
+    use coerce_cqrs_test::fixtures::aggregate::{TestEvent, TestView};
     use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
@@ -112,6 +113,7 @@ mod tests {
             let view = TestView {
                 label: "test_view".to_string(),
                 count: 1,
+                events: vec![TestEvent::Tested(1)],
                 sum: 33,
             };
             assert_ok!(

@@ -14,11 +14,10 @@ use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::sync::Arc;
 
 pub(in crate::postgres) mod protocol {
-    use std::fmt;
-    use std::fmt::Formatter;
     use super::*;
     use crate::postgres::{PostgresStorageError, StorageKey};
     use crate::projection::{AggregateEntries, AggregateSequences};
+    use std::fmt;
 
     #[derive(Debug)]
     pub struct FindAllPersistenceIds;
@@ -34,7 +33,11 @@ pub(in crate::postgres) mod protocol {
     impl fmt::Debug for ReadBulkLatestMessages {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.debug_map()
-                .entries(self.sequences.iter().map(|(pid, seq)| (format!("{pid:#}"), seq)))
+                .entries(
+                    self.sequences
+                        .iter()
+                        .map(|(pid, seq)| (format!("{pid:?}"), seq)),
+                )
                 .finish()
         }
     }
@@ -223,7 +226,7 @@ impl PostgresJournal {
 
         let query_result = query.execute(tx).await.map_err(|err| err.into());
         match &query_result {
-            Ok(result) => debug!("postgres journal persist message result: {result:?}"),
+            Ok(result) => debug!("postgres journal message saved."),
             Err(error) => error!("postgres journal failed to persist message: {error:?}"),
         }
 
@@ -405,7 +408,7 @@ impl Handler<ReadBulkLatestMessages> for PostgresJournal {
         let mut result = AggregateEntries::default();
 
         for (persistence_id, last_offset) in message.sequences {
-            debug!("DMR: last_offset for {persistence_id:#} = {last_offset:?}");
+            debug!("DMR: last_offset for {persistence_id:?} = {last_offset:?}");
             let storage_key = self
                 .storage_key_codec
                 .key_from_persistence_parts(&persistence_id, EntryType::Journal);

@@ -12,6 +12,7 @@ use tagid::{CuidGenerator, Entity, Label};
 pub struct TestView {
     pub label: String,
     pub count: usize,
+    pub events: Vec<TestEvent>,
     pub sum: i32,
 }
 
@@ -20,6 +21,7 @@ impl Default for TestView {
         Self {
             label: "<empty>".to_string(),
             count: 0,
+            events: vec![],
             sum: 0,
         }
     }
@@ -27,35 +29,41 @@ impl Default for TestView {
 
 #[allow(dead_code, clippy::missing_const_for_fn)]
 #[instrument(level = "debug")]
-pub fn apply_test_event_to_view(mut view: TestView, event: TestEvent) -> Option<TestView> {
-
-    let new_view = match event {
+pub fn apply_test_event_to_view(mut view: TestView, event: TestEvent) -> (TestView, bool) {
+    let is_updated = match &event {
         TestEvent::Started(label) => {
             debug!("DMR: VIEW: updating label: {label}");
-            view.label = label;
+            view.label = label.to_string();
             view.count += 1;
-            Some(view)
+            view.events.push(event.clone());
+            true
         }
 
         TestEvent::Tested(value) => {
             let old_sum = view.sum;
             view.count += 1;
             view.sum += value;
+            view.events.push(event.clone());
             debug!(
                 "DMR: VIEW: updating sum: {old_sum} + {value} = {new_sum}",
                 new_sum = view.sum
             );
-            Some(view)
+            true
         }
 
         TestEvent::Stopped => {
             debug!("DMR: VIEW: stopped event -- no view update");
-            None
+            false
         }
     };
 
-    debug!(?new_view, "DMR: VIEW: view {} updated.", if new_view.is_some() { "was" } else { "was not" });
-    new_view
+    debug!(
+        new_view=?view,
+        "DMR: VIEW: view {} updated.",
+        if is_updated { "was" } else { "was not" }
+    );
+
+    (view, is_updated)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, JsonMessage, Serialize, Deserialize)]

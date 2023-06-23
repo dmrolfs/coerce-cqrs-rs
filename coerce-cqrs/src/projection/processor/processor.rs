@@ -67,16 +67,13 @@ pub trait ProcessorSource: JournalStorage {
         &self,
         sequences: AggregateSequences,
     ) -> anyhow::Result<Option<AggregateEntries>>;
-
 }
 
 /// Entry point to build ProcessorEngine
 pub struct Processor;
 
 impl Processor {
-    pub fn builder<H, I>(
-        projection_name: impl Into<String>,
-    ) -> ProcessorEngine<Building<H, I>>
+    pub fn builder<H, I>(projection_name: impl Into<String>) -> ProcessorEngine<Building<H, I>>
     where
         H: ProcessEntry,
         // O: OffsetStorage,
@@ -334,8 +331,20 @@ where
                     // },
 
 
-                    latest = Self::read_all_latest_messages(&projection_name, source.clone(), handler.clone(), /*offset_storage.clone()*/) => {
-                        context = self.do_handle_latest_entries(latest, context).await?;
+                    latest = Self::read_all_latest_messages(&projection_name, source.clone(), handler.clone()) => {
+                        match latest {
+                            Ok(l) => { context = self.do_handle_latest_entries(l, handler.clone(), context).await?; },
+
+                            Err(error) if 3 < context.nr_repeat_failures => {
+                                error!(?error, "too many {projection_name} processor failures - stopping");
+                                break;
+                            },
+
+                            Err(error) => {
+                                error!(?error, "failed to pull latest journal entries since last processor iteration.");
+                                context.nr_repeat_failures += 1;
+                            },
+                        }
                     },
 
                     else => {
@@ -361,11 +370,14 @@ where
         handler: Arc<H>,
         // offset_storage: Arc<O>,
     ) -> anyhow::Result<Option<AggregateEntries>> {
-        let offsets: Vec<_> =  handler  //offset_storage
+        let offsets: Vec<_> = handler //offset_storage
             .read_all_offsets(projection_name)
             .await?
             .into_iter()
-            .map(|(pid, offset)| (pid, Some(offset.as_i64() + 1)))
+            .map(|(pid, last_offset)| {
+                debug!("DMR: LAST_OFFSET: {pid:?} = {}", last_offset.as_i64());
+                (pid, Some(last_offset.as_i64() + 1))
+            })
             .collect();
         debug!("DMR: offsets: {offsets:?}");
 
@@ -375,11 +387,20 @@ where
             .into_iter()
             .map(|key| (key, None))
             .collect();
-        debug!("DMR: sequences: {sequences:?}");
+        debug!("DMR: sequences: {:?}", sequences.iter().map(|(k,v)|(k.to_string(), v)).collect::<HashMap<_,_>>());
 
         sequences.extend(offsets);
 
-        source.read_bulk_latest_messages(sequences).await
+        let result = source.read_bulk_latest_messages(sequences).await;
+        debug!(
+            "DMR: PULLED MESSAGES PER AGGREGATE: {:?}",
+            result.as_ref().map(|lo| lo.as_ref().map(|l| l
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.len()))
+                .collect::<HashMap<_, _>>()))
+        );
+
+        result
     }
 
     #[instrument(level = "debug", skip(self))]
@@ -400,71 +421,60 @@ where
                     "GetOffset command sent to processor: {:?}",
                     ctx.projection_name
                 );
-                let offset = self.inner.entry_handler.offset_for_persistence_id(&ctx.projection_name, &pid).await.ok().flatten();
+                let offset = self
+                    .inner
+                    .entry_handler
+                    .read_offset_for_persistence_id(&ctx.projection_name, &pid)
+                    .await
+                    .ok()
+                    .flatten();
                 let _ignore = tx_reply.send(offset);
                 Ok(true)
             }
         }
     }
 
-    #[instrument( level = "debug", skip(self, latest), )]
+    #[instrument(level = "debug", skip(self, latest, handler))]
     async fn do_handle_latest_entries(
         &mut self,
-        latest: anyhow::Result<Option<AggregateEntries>>,
+        latest: Option<AggregateEntries>,
+        handler: Arc<H>,
         mut context: ProcessorContext,
     ) -> Result<ProcessorContext, ProjectionError> {
-        // debug!(
-        //     latest=%format!("{:?}", latest.map(|rl| rl.map(|ol| {
-        //         ol.iter().map(|(pid, entries)| (format!("{pid:#}"), entries)).collect::<HashMap<_, _>>()}
-        //     ))),
-        //     "Handling latest entries since last processing..."
-        // );
+        debug!(?latest, "DMR: Handling latest entries since last processing...");
         let mut error = None;
 
-        match latest {
-            Ok(Some(latest)) if latest.is_empty() => {
-                debug!(
-                    ?context,
-                    "no journal entries (empty) retrieved for all aggregates."
-                );
-                context.nr_repeat_empties += 1;
-            }
+        let all_empty = |latest: &AggregateEntries| { latest.values().all(|entries| entries.is_empty()) };
 
-            Ok(None) => {
+        match latest {
+            None => {
                 debug!(?context, "no journal entries retrieved for all aggregates.");
                 context.nr_repeat_empties += 1;
-            }
+            },
 
-            Ok(Some(latest)) => {
+            Some(latest) if latest.is_empty() || all_empty(&latest) => {
+                debug!(?context, "no journal entries (empty) retrieved for all aggregates.");
+                context.nr_repeat_empties += 1;
+            },
+
+            Some(latest) => {
                 debug!("DMR: FOUND {} AGGREGATES...", latest.len());
                 for (persistence_id, entries) in latest {
-                    debug!("DMR: # LATEST pulled: {persistence_id:#} => {}", entries.len());
-                    for entry in entries {
-                        if let Err(err) = self
-                            .do_process_entry(&persistence_id, entry, &context)
-                            .await
-                        {
-                            debug!("DMR: process error: {err:?}");
-                            context.nr_repeat_failures += 1;
-                            error = Some(err);
-                            break;
-                        }
+                    let outcome = self
+                        .do_process_aggregate_entries(&persistence_id, entries, handler.as_ref(), &context)
+                        .await;
+                    if let Err(err) = outcome {
+                        debug!("DMR: failed to process entries: {err:?}");
+                        context.nr_repeat_failures += 1;
+                        error = Some(err);
                     }
                 }
 
                 context.nr_repeat_empties = 0;
-            }
-
-            Err(err) => {
-                error!(error=?err, "failed to pull latest journal entries since last processor iteration.");
-                context.nr_repeat_failures += 1;
-                error = Some(ProjectionError::Storage {
-                    cause: err,
-                    meta: maplit::hashmap! {},
-                });
-            }
+            },
         };
 
+        debug!("DMR - entry_process failure: {error:?}");
         match error {
             None => {
                 self.do_delay(&context).await;
@@ -495,61 +505,50 @@ where
         }
     }
 
-    #[instrument(level = "debug", skip(self, entry))]
-    async fn do_process_entry(
+    #[instrument(level = "debug", skip(self, handler))]
+    async fn do_process_aggregate_entries(
         &mut self,
         persistence_id: &PersistenceId,
-        entry: JournalEntry,
+        entries: Vec<JournalEntry>,
+        handler: &H,
         ctx: &ProcessorContext,
-    ) -> Result<Offset, ProjectionError> {
-        let payload_type = entry.payload_type.clone();
-
-        debug!(
-            "DMR: VIEW: Processing entry[{}] for {persistence_id}",
-            entry.sequence
-        );
-        let offset = self
-            .inner
-            .entry_handler
-            .process_entry(persistence_id, entry, ctx)
-            .await;
-        info!("DMR: VIEW: PROCESSED ENTRY FOR {persistence_id:#}: new last_offset = {offset:?}");
-
-        match offset {
-            Ok(o) => Ok(o),
-
-            Err(error) => self.inner.entry_handler.handle_error(
-                persistence_id,
-                error,
-                payload_type.as_ref(),
-                ctx,
-            ),
+    ) -> Result<(), ProjectionError> {
+        if entries.is_empty() {
+            return Ok(());
         }
 
-        // self.save_offset(&ctx.projection_name, persistence_id, next_sequence)
-        //     .await
-    }
+        let mut projection = handler.load_projection(persistence_id, ctx).await?;
+        debug!(
+            ?projection,
+            "DMR: # LATEST pulled: {persistence_id} => {}",
+            entries.len()
+        );
 
-    // #[instrument(level = "trace", skip(self))]
-    // async fn save_offset(
-    //     &self,
-    //     projection_name: &str,
-    //     persistence_id: &PersistenceId,
-    //     entry_sequence: i64,
-    // ) -> Result<Offset, ProjectionError> {
-    //     let offset = Offset::new(entry_sequence);
-    //     self.inner
-    //         .offset_storage
-    //         .save_offset(projection_name, persistence_id, offset)
-    //         .await?;
-    //     Ok(offset)
-    // }
+        let mut any_update = false;
+        let mut last_offset = None;
+        for entry in entries {
+            let offset_sequence = entry.sequence;
+            let (p, is_updated) = handler.apply_entry_to_projection(projection, entry, ctx);
+            projection = p;
+            if is_updated {
+                any_update = true;
+            }
+            last_offset = Some(Offset::new(offset_sequence));
+        }
+        let last_offset = last_offset.unwrap();
+
+        let updated_projection = if any_update { Some(projection) } else { None };
+
+        debug!(?last_offset, "DMR: applied to projection pulled entries for {persistence_id} => {updated_projection:?}");
+
+        handler.save_projection_and_offset(persistence_id, updated_projection, last_offset, ctx).await?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct Running {
-    // context: ProcessorContext,
     tx_api: ProcessorApi,
     handle: JoinHandle<Result<(), ProjectionError>>,
 }

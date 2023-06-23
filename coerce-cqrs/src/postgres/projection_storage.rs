@@ -66,7 +66,13 @@ impl<V> PostgresProjectionStorage<V> {
     }
 
     #[inline]
-    pub fn name(&self) -> &str { self.name.as_str() }
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    fn view_key_for(&self, persistence_id: &PersistenceId) -> String {
+        format!("{}::{persistence_id:#}", self.name)
+    }
 }
 
 #[async_trait]
@@ -94,7 +100,7 @@ where
         &self,
         view_id: &Self::ViewId,
     ) -> Result<Option<Self::Projection>, ProjectionError> {
-        let entry = actor::protocol::load_projection(&self.storage, view_id)
+        let projection_entry = actor::protocol::load_projection(&self.storage, &self.view_key_for(view_id))
             .await
             .map_err(|err| ProjectionError::Storage {
                 cause: err.into(),
@@ -105,7 +111,7 @@ where
                 },
             })?;
 
-        let projection = entry
+        let projection = projection_entry
             .as_ref()
             .map(|e| {
                 bincode::serde::decode_from_slice(e.bytes.as_slice(), bincode::config::standard())
@@ -113,7 +119,7 @@ where
             })
             .transpose()?;
 
-        debug!(?entry, ?projection, "loaded projection for {view_id}");
+        debug!(?projection_entry, ?projection, "loaded projection for {view_id}");
         Ok(projection)
     }
 
@@ -132,25 +138,34 @@ where
         projection: Option<Self::Projection>,
         last_offset: Offset,
     ) -> Result<(), ProjectionError> {
-        let bytes = projection.map(|p| bincode::serde::encode_to_vec(p, bincode::config::standard())).transpose()?;
+        let bytes = projection
+            .map(|p| bincode::serde::encode_to_vec(p, bincode::config::standard()))
+            .transpose()?;
         let bytes = bytes.map(Arc::new);
         let entry = bytes.map(|b| ProjectionEntry { bytes: b });
-        let query_result =
-            actor::protocol::save_projection(&self.storage, &self.name, view_id, entry, last_offset)
-                .await
-                .map_err(|err| ProjectionError::Storage {
-                    cause: err.into(),
-                    meta: maplit::hashmap! {
-                        META_VIEW_TABLE.to_string() => self.view_storage_table.to_string(),
-                        META_OFFSET_TABLE.to_string() => self.offset_storage_table.to_string(),
-                        META_PERSISTENCE_ID.to_string() => view_id.to_string(),
-                        META_PROJECTION_NAME.to_string() => self.name.to_string(),
-                    },
-                })?;
+        let query_result = actor::protocol::save_projection(
+            &self.storage,
+            &self.name,
+            view_id,
+            &self.view_key_for(view_id),
+            entry,
+            last_offset,
+        )
+        .await
+        .map_err(|err| ProjectionError::Storage {
+            cause: err.into(),
+            meta: maplit::hashmap! {
+                META_VIEW_TABLE.to_string() => self.view_storage_table.to_string(),
+                META_OFFSET_TABLE.to_string() => self.offset_storage_table.to_string(),
+                META_PERSISTENCE_ID.to_string() => view_id.to_string(),
+                META_PROJECTION_NAME.to_string() => self.name.to_string(),
+            },
+        })?;
         debug!(?query_result, "save_projection completed");
         Ok(())
     }
 
+    #[instrument(level="debug", skip(self))]
     async fn read_all_offsets(
         &self,
         projection_name: &str,
@@ -198,9 +213,9 @@ mod actor {
         #[instrument(level = "debug", name = "protocol::load_projection")]
         pub async fn load_projection(
             actor: &LocalActorRef<PostgresProjectionStorageActor>,
-            persistence_id: &PersistenceId,
+            view_key: &str,
         ) -> Result<Option<ProjectionEntry>, PostgresStorageError> {
-            let command = LoadProjection::new(persistence_id.clone());
+            let command = LoadProjection::new(view_key);
             actor.send(command).await?
         }
 
@@ -209,21 +224,35 @@ mod actor {
             actor: &LocalActorRef<PostgresProjectionStorageActor>,
             projection_name: &str,
             persistence_id: &PersistenceId,
+            view_key: &str,
             entry: Option<ProjectionEntry>,
             last_offset: Offset,
-        ) -> Result<SaveProjectOutcome, PostgresStorageError> {
-            let command =
-                SaveProjection::new(projection_name, persistence_id.clone(), entry, last_offset);
+        ) -> Result<SavedProjectOutcome, PostgresStorageError> {
+            let command = SaveProjection::new(projection_name, persistence_id, view_key, entry, last_offset);
             actor.send(command).await?
         }
 
-        #[instrument(level = "debug", name = "protocol::load_offset")]
+        #[instrument(level = "debug", name = "protocol::load_all_offsets")]
         pub async fn load_all_offsets(
             actor: &LocalActorRef<PostgresProjectionStorageActor>,
             projection_name: &str,
         ) -> Result<HashMap<PersistenceId, Offset>, PostgresStorageError> {
             let command = LoadAllOffsets::new(projection_name);
-            actor.send(command).await?
+            debug!(
+                ?actor,
+                "DMR: BEFORE actor valid?[{}]: {:?}",
+                actor.is_valid(),
+                actor.status().await
+            );
+            let result = actor.send(command).await;
+            debug!(
+                ?actor,
+                ?result,
+                "DMR: AFTER actor valid?[{}]: {:?}",
+                actor.is_valid(),
+                actor.status().await
+            );
+            result?
         }
 
         #[instrument(level = "debug", name = "protocol::load_offset")]
@@ -238,12 +267,14 @@ mod actor {
 
         #[derive(Debug)]
         pub struct LoadProjection {
-            pub persistence_id: PersistenceId,
+            pub view_key: String,
         }
 
         impl LoadProjection {
-            pub const fn new(persistence_id: PersistenceId) -> Self {
-                Self { persistence_id }
+            pub fn new(view_key: &str) -> Self {
+                Self {
+                    view_key: view_key.to_string(),
+                }
             }
         }
 
@@ -255,6 +286,7 @@ mod actor {
         pub struct SaveProjection {
             pub projection_name: String,
             pub persistence_id: PersistenceId,
+            pub view_key: String,
             pub entry: Option<ProjectionEntry>,
             pub last_offset: Offset,
         }
@@ -262,13 +294,15 @@ mod actor {
         impl SaveProjection {
             pub fn new(
                 projection_name: &str,
-                persistence_id: PersistenceId,
+                persistence_id: &PersistenceId,
+                view_key: &str,
                 entry: Option<ProjectionEntry>,
                 last_offset: Offset,
             ) -> Self {
                 Self {
                     projection_name: projection_name.to_string(),
-                    persistence_id,
+                    persistence_id: persistence_id.clone(),
+                    view_key: view_key.to_string(),
                     entry,
                     last_offset,
                 }
@@ -276,13 +310,13 @@ mod actor {
         }
 
         #[derive(Debug)]
-        pub struct SaveProjectOutcome {
+        pub struct SavedProjectOutcome {
             pub projection: Option<PgQueryResult>,
             pub offset: PgQueryResult,
         }
 
         impl Message for SaveProjection {
-            type Result = Result<SaveProjectOutcome, PostgresStorageError>;
+            type Result = Result<SavedProjectOutcome, PostgresStorageError>;
         }
 
         #[derive(Debug)]
@@ -323,17 +357,19 @@ mod actor {
     }
 
     use super::sql_query::ProjectionStorageSqlQueryFactory;
-    use crate::postgres::projection_storage::actor::protocol::{LoadAllOffsets, LoadOffset, LoadProjection, SaveProjection, SaveProjectOutcome};
+    use crate::postgres::projection_storage::actor::protocol::{
+        LoadAllOffsets, LoadOffset, LoadProjection, SavedProjectOutcome, SaveProjection,
+    };
     use crate::postgres::projection_storage::ProjectionEntry;
     use crate::postgres::PostgresStorageError;
     use crate::projection::{Offset, PersistenceId};
     use coerce::actor::context::ActorContext;
     use coerce::actor::message::{Handler, Message};
     use coerce::actor::Actor;
-    use sqlx::postgres::{PgQueryResult, PgRow};
+    use iso8601_timestamp::Timestamp;
+    use sqlx::postgres::PgRow;
     use sqlx::{PgPool, Row};
     use std::sync::Arc;
-    use iso8601_timestamp::Timestamp;
 
     #[derive(Debug)]
     pub struct PostgresProjectionStorageActor {
@@ -386,7 +422,7 @@ mod actor {
             _ctx: &mut ActorContext,
         ) -> Result<Option<ProjectionEntry>, PostgresStorageError> {
             sqlx::query(self.sql_query.select_latest_view())
-                .bind(message.persistence_id.as_persistence_id())
+                .bind(&message.view_key)
                 .map(|row| self.entry_from_row(row))
                 .fetch_optional(&self.pool)
                 .await
@@ -403,55 +439,57 @@ mod actor {
             _ctx: &mut ActorContext,
         ) -> <SaveProjection as Message>::Result {
             let projection_name = message.projection_name;
+            let view_key = message.view_key;
             let persistence_id = message.persistence_id.as_persistence_id();
-            let offset = message.last_offset;
+            // let projection_id = &persistence_id;
+            let last_offset = message.last_offset;
 
             let mut tx = sqlx::Acquire::begin(&self.pool).await?;
 
             let now = crate::util::now_timestamp();
 
             let save_projection_result = match message.entry {
-                Some(entry) => {
-                    Some(
-                        sqlx::query(self.sql_query.update_or_insert_view())
-                            .bind(&persistence_id)
-                            .bind(entry.bytes.to_vec())
-                            .bind(now)
-                            .bind(now)
-                            .execute(&mut tx)
-                            .await
-                            .map_err(|err| err.into())
-                    )
-                },
+                Some(entry) => Some(
+                    sqlx::query(self.sql_query.update_or_insert_view())
+                        .bind(&view_key)
+                        .bind(entry.bytes.to_vec())
+                        .bind(now)
+                        .bind(now)
+                        .execute(&mut tx)
+                        .await
+                        .map_err(|err| err.into()),
+                ),
 
                 None => None,
             }
-                .transpose();
+            .transpose();
 
             let save_offset_result = sqlx::query(self.sql_query.update_or_insert_offset())
                 .bind(&projection_name)
                 .bind(&persistence_id)
-                .bind(offset.as_i64())
-                .bind(crate::util::timestamp_seconds(offset.timestamp()))
+                .bind(last_offset.as_i64())
+                .bind(crate::util::timestamp_seconds(last_offset.timestamp()))
                 .execute(&mut tx)
                 .await
                 .map_err(|err| PostgresStorageError::Storage(err.into()));
 
-            debug!(?save_projection_result, ?save_offset_result, "DMR: save_projection query submitted.");
+            debug!(
+                ?save_projection_result,
+                ?save_offset_result,
+                "DMR: save_projection query submitted."
+            );
 
             if let Err(error) = tx.commit().await {
                 error!(
-                    view_id=%message.persistence_id,
+                    %projection_name, %persistence_id, %view_key, ?last_offset,
                     "postgres projection storage failed to commit save projection transaction: {error:?}"
                 );
                 return Err(error.into());
             }
 
-            let result = save_projection_result
-                .and_then(|projection| save_offset_result.map(|offset| SaveProjectOutcome {
-                    projection,
-                    offset,
-                }));
+            let result = save_projection_result.and_then(|projection| {
+                save_offset_result.map(|offset| SavedProjectOutcome { projection, offset })
+            });
             debug!("DMR: save_projection committed: {result:?}");
             result
         }
@@ -465,17 +503,35 @@ mod actor {
             message: LoadAllOffsets,
             _ctx: &mut ActorContext,
         ) -> <LoadAllOffsets as Message>::Result {
-            sqlx::query(self.sql_query.select_all_offsets())
-                .bind(message.projection_name())
+            let projection_name = message.projection_name();
+            let persistence_id_col = self.sql_query.persistence_id_column();
+            let sql = self.sql_query.select_all_offsets();
+            debug!(%projection_name, %persistence_id_col, %sql, "DMR-AAA");
+
+            let sql_result = sqlx::query(sql)
+                .bind(projection_name)
                 .map(|row: PgRow| {
-                    let id: PersistenceId = row.get(self.sql_query.persistence_id_column());
+                    let id: PersistenceId = row.get(persistence_id_col);
+                    debug!(persistence_id=%id, "DMR-BBB");
                     let offset = self.offset_from_row(row);
+                    debug!(?offset, "DMR-CCC");
                     (id, offset)
                 })
                 .fetch_all(&self.pool)
-                .await
-                .map(|results| results.into_iter().collect())
-                .map_err(|err| err.into())
+                .await;
+            debug!(?sql_result, "DMR-DDD");
+            let result = sql_result
+                .map(|results| {
+                    debug!(?results, "DMR: read all offsets for {}", message.projection_name());
+                    results.into_iter().collect()
+                })
+                .map_err(|err| {
+                    error!(?err, "DMR: failed reading all offsets for {}", message.projection_name());
+                    err.into()
+                });
+
+            debug!(?result, "DMR-EEE");
+            result
         }
     }
 

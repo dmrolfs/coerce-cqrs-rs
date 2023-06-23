@@ -4,7 +4,6 @@ mod provider;
 
 #[doc(hidden)]
 pub mod doc;
-mod offset;
 mod projection_storage;
 mod sql_query;
 

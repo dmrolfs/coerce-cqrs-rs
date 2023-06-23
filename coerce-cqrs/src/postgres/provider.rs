@@ -4,7 +4,10 @@ use crate::postgres::config::{self, PostgresStorageConfig};
 use crate::postgres::{
     EntryType, PostgresStorageError, SimpleStorageKeyCodec, StorageKey, StorageKeyCodec,
 };
-use crate::projection::{AggregateEntries, AggregateSequences, PersistenceId, ProcessorSource, ProcessorSourceProvider, ProcessorSourceRef};
+use crate::projection::{
+    AggregateEntries, AggregateSequences, PersistenceId, ProcessorSource, ProcessorSourceProvider,
+    ProcessorSourceRef,
+};
 use anyhow::Context;
 use coerce::actor::system::ActorSystem;
 use coerce::actor::{IntoActor, LocalActorRef};

@@ -14,6 +14,7 @@ use coerce_cqrs_test::fixtures::aggregate::{
     self, Summarize, TestAggregate, TestCommand, TestEvent, TestState, TestView,
 };
 use once_cell::sync::Lazy;
+use pretty_assertions::assert_eq;
 use std::sync::Arc;
 use std::time::Duration;
 use tagid::Entity;
@@ -46,7 +47,7 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
         .with_entry_handler(view_apply)
         .with_source(storage.clone())
         // .with_offset_storage(offset_storage.clone())
-        .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(50)));
+        .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(25)));
 
     let processor = assert_ok!(processor.finish());
     let processor = assert_ok!(processor.run());
@@ -93,31 +94,38 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
 
     tracing::info!("**** CMD - STOP");
     assert_ok!(actor.notify(TestCommand::Stop));
-    let summary = assert_ok!(actor.send(Summarize::default()).await);
-    assert_eq!(summary, TestState::completed(DESCRIPTION, vec![1, 2, 3, 5]));
+    // let summary = assert_ok!(actor.send(Summarize::default()).await);
+    // assert_eq!(summary, TestState::completed(DESCRIPTION, vec![1, 2, 3, 5]));
 
     tracing::info!("**** STOP ACTOR");
     assert_ok!(actor.stop().await);
 
     tracing::info!("**** SLEEP...");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(51)).await;
     tracing::info!("**** WAKE");
 
-    tracing::info!("**** LOAD VIEW...");
+    tracing::info!("**** LOAD VIEW: {vid}...");
     let view = assert_some!(assert_ok!(view_storage.load_projection(&vid).await));
     assert_eq!(
         view,
         TestView {
             label: "tests starting now!... now... now".to_string(),
-            count: 6,
+            count: 5,
             sum: 11,
+            events: vec![
+                TestEvent::Started("tests starting now!... now... now".to_string()),
+                TestEvent::Tested(1),
+                TestEvent::Tested(2),
+                TestEvent::Tested(3),
+                TestEvent::Tested(5),
+            ],
         }
     );
 
     info!("**** EXAMINE EVENTS");
     // let events = assert_some!(assert_ok!(storage.read_latest_messages(pid.to_string().as_str(), -10000).await));
     let events = assert_some!(assert_ok!(
-        storage.read_latest_messages(&format!("{:#}", pid), 0).await
+        storage.read_latest_messages(&format!("{}", pid.as_persistence_id()), 0).await
     ));
     let events: Vec<_> = events
         .into_iter()

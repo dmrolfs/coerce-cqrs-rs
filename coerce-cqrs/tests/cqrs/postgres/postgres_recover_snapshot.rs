@@ -5,14 +5,17 @@ use coerce::actor::system::ActorSystem;
 use coerce::actor::IntoActor;
 use coerce::persistent::journal::provider::StorageProvider;
 use coerce::persistent::Persistence;
-use coerce_cqrs::postgres::{ PostgresProjectionStorage, PostgresStorageConfig, PostgresStorageProvider, };
-use coerce_cqrs::projection::{ PersistenceId, Processor, ProjectionApplicator, ProjectionStorage, };
+use coerce_cqrs::postgres::{
+    PostgresProjectionStorage, PostgresStorageConfig, PostgresStorageProvider,
+};
+use coerce_cqrs::projection::{PersistenceId, Processor, ProjectionApplicator, ProjectionStorage};
 use coerce_cqrs::projection::{ProcessorSourceProvider, RegularInterval};
 use coerce_cqrs::CommandResult;
 use coerce_cqrs_test::fixtures::aggregate::{
     self, Summarize, TestAggregate, TestCommand, TestEvent, TestState, TestView,
 };
 use once_cell::sync::Lazy;
+use pretty_assertions::assert_eq;
 use std::sync::Arc;
 use std::time::Duration;
 use tagid::Entity;
@@ -75,7 +78,7 @@ async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
         .with_entry_handler(view_apply)
         .with_source(storage.clone())
         // .with_offset_storage(offset_storage.clone())
-        .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(500)));
+        .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(50)));
 
     let processor = assert_ok!(processor.finish());
     let processor = assert_ok!(processor.run());
@@ -149,7 +152,7 @@ async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1, 2, 3, 5,]));
 
     info!("**** CMD - STOP");
-    let reply = assert_ok!(actor.send(TestCommand::Stop).await);
+    assert_ok!(actor.notify(TestCommand::Stop));
     // assert_eq!(reply, CommandResult::Ok("completed:11".to_string()));
     // let summary = assert_ok!(actor.send(Summarize::default()).await);
     // assert_eq!(summary, TestState::completed(DESCRIPTION, vec![1, 2, 3, 5]));
@@ -158,7 +161,7 @@ async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
     assert_ok!(actor.stop().await);
 
     info!("**** SLEEP...");
-    tokio::time::sleep(Duration::from_millis(5000)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     info!("**** WAKE");
     // let actor = assert_ok!(
     //     TestAggregate::default()
@@ -177,13 +180,20 @@ async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
             label: "tests starting now!... now... now".to_string(),
             count: 5,
             sum: 11,
+            events: vec![
+                TestEvent::Started("tests starting now!... now... now".to_string()),
+                TestEvent::Tested(1),
+                TestEvent::Tested(2),
+                TestEvent::Tested(3),
+                TestEvent::Tested(5),
+            ],
         }
     );
 
     info!("**** EXAMINE EVENTS");
 
     let events = assert_some!(assert_ok!(
-        storage.read_latest_messages(&format!("{:#}", pid), 0).await
+        storage.read_latest_messages(&format!("{}", pid.as_persistence_id()), 0).await
     ));
     let events: Vec<_> = events
         .into_iter()
