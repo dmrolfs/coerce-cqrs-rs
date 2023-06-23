@@ -132,7 +132,9 @@ mod tests {
                     .await
             );
             let pid: PersistenceId = id.clone().into();
-            let journal = storage.read_latest_messages(&pid.as_persistence_id(), 0).await;
+            let journal = storage
+                .read_latest_messages(&pid.as_persistence_id(), 0)
+                .await;
             info!(?actor, ?journal, "**** before - actor and journal");
             assert_ok!(actor.notify(Msg(1)));
             assert_ok!(actor.notify(Msg(2)));

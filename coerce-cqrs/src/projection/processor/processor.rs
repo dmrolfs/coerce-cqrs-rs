@@ -387,7 +387,13 @@ where
             .into_iter()
             .map(|key| (key, None))
             .collect();
-        debug!("DMR: sequences: {:?}", sequences.iter().map(|(k,v)|(k.to_string(), v)).collect::<HashMap<_,_>>());
+        debug!(
+            "DMR: sequences: {:?}",
+            sequences
+                .iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect::<HashMap<_, _>>()
+        );
 
         sequences.extend(offsets);
 
@@ -441,27 +447,39 @@ where
         handler: Arc<H>,
         mut context: ProcessorContext,
     ) -> Result<ProcessorContext, ProjectionError> {
-        debug!(?latest, "DMR: Handling latest entries since last processing...");
+        debug!(
+            ?latest,
+            "DMR: Handling latest entries since last processing..."
+        );
         let mut error = None;
 
-        let all_empty = |latest: &AggregateEntries| { latest.values().all(|entries| entries.is_empty()) };
+        let all_empty =
+            |latest: &AggregateEntries| latest.values().all(|entries| entries.is_empty());
 
         match latest {
             None => {
                 debug!(?context, "no journal entries retrieved for all aggregates.");
                 context.nr_repeat_empties += 1;
-            },
+            }
 
             Some(latest) if latest.is_empty() || all_empty(&latest) => {
-                debug!(?context, "no journal entries (empty) retrieved for all aggregates.");
+                debug!(
+                    ?context,
+                    "no journal entries (empty) retrieved for all aggregates."
+                );
                 context.nr_repeat_empties += 1;
-            },
+            }
 
             Some(latest) => {
                 debug!("DMR: FOUND {} AGGREGATES...", latest.len());
                 for (persistence_id, entries) in latest {
                     let outcome = self
-                        .do_process_aggregate_entries(&persistence_id, entries, handler.as_ref(), &context)
+                        .do_process_aggregate_entries(
+                            &persistence_id,
+                            entries,
+                            handler.as_ref(),
+                            &context,
+                        )
                         .await;
                     if let Err(err) = outcome {
                         debug!("DMR: failed to process entries: {err:?}");
@@ -471,7 +489,7 @@ where
                 }
 
                 context.nr_repeat_empties = 0;
-            },
+            }
         };
 
         debug!("DMR - entry_process failure: {error:?}");
@@ -541,7 +559,9 @@ where
 
         debug!(?last_offset, "DMR: applied to projection pulled entries for {persistence_id} => {updated_projection:?}");
 
-        handler.save_projection_and_offset(persistence_id, updated_projection, last_offset, ctx).await?;
+        handler
+            .save_projection_and_offset(persistence_id, updated_projection, last_offset, ctx)
+            .await?;
         Ok(())
     }
 }

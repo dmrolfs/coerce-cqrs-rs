@@ -3,7 +3,6 @@ use claim::*;
 use coerce::actor::message::Message;
 use coerce::actor::system::ActorSystem;
 use coerce::actor::IntoActor;
-use coerce::persistent::journal::provider::StorageProvider;
 use coerce::persistent::Persistence;
 use coerce_cqrs::postgres::{
     PostgresProjectionStorage, PostgresStorageConfig, PostgresStorageProvider,
@@ -180,7 +179,9 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     info!("**** EXAMINE EVENTS");
 
     let events = assert_some!(assert_ok!(
-        storage.read_latest_messages(&format!("{}", pid.as_persistence_id()), 0).await
+        storage
+            .read_latest_messages(&format!("{}", pid.as_persistence_id()), 0)
+            .await
     ));
     let events: Vec<_> = events
         .into_iter()

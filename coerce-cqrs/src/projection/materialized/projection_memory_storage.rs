@@ -81,7 +81,7 @@ where
         _projection_name: &str,
         persistence_id: &PersistenceId,
     ) -> Result<Option<Offset>, ProjectionError> {
-        Ok(self.offset_store.get(persistence_id).map(|v| v.clone()))
+        Ok(self.offset_store.get(persistence_id).map(|v| *v))
     }
 }
 

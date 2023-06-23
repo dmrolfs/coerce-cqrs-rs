@@ -3,7 +3,6 @@ use claim::*;
 use coerce::actor::message::Message;
 use coerce::actor::system::ActorSystem;
 use coerce::actor::IntoActor;
-use coerce::persistent::journal::provider::StorageProvider;
 use coerce::persistent::Persistence;
 use coerce_cqrs::postgres::{
     PostgresProjectionStorage, PostgresStorageConfig, PostgresStorageProvider,
@@ -67,9 +66,6 @@ async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow!("no processor storage!"))?;
     let system = system.to_persistent(Persistence::from(journal_storage_provider));
 
-    // let offset_storage =
-    //     Arc::new(PostgresOffsetStorage::new("projection_offset", &storage_config, &system).await?);
-
     let aid = TestAggregate::next_id();
     let pid = PersistenceId::from_aggregate_id::<TestAggregate>(aid.id.as_str());
     let vid = pid.clone();
@@ -77,7 +73,6 @@ async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
     let processor = Processor::builder_for::<TestAggregate, _, _>(projection_name.clone())
         .with_entry_handler(view_apply)
         .with_source(storage.clone())
-        // .with_offset_storage(offset_storage.clone())
         .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(50)));
 
     let processor = assert_ok!(processor.finish());
@@ -193,7 +188,9 @@ async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
     info!("**** EXAMINE EVENTS");
 
     let events = assert_some!(assert_ok!(
-        storage.read_latest_messages(&format!("{}", pid.as_persistence_id()), 0).await
+        storage
+            .read_latest_messages(&format!("{}", pid.as_persistence_id()), 0)
+            .await
     ));
     let events: Vec<_> = events
         .into_iter()

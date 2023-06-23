@@ -226,7 +226,7 @@ impl PostgresJournal {
 
         let query_result = query.execute(tx).await.map_err(|err| err.into());
         match &query_result {
-            Ok(result) => debug!("postgres journal message saved."),
+            Ok(_) => debug!("postgres journal message saved."),
             Err(error) => error!("postgres journal failed to persist message: {error:?}"),
         }
 
@@ -338,17 +338,10 @@ impl Handler<FindAllPersistenceIds> for PostgresJournal {
                 .map_err(|err| err.into());
         debug!("DMR: persistence keys: {keys:?}");
 
-        let persistence_ids = keys?
+        keys?
             .into_iter()
-            .map(|k| {
-                let pid = self.storage_key_into_parts(k).map(|(_, pid, _)| pid);
-                // debug!("DMR: extracted persistence_id: {pid:?}");
-                pid
-            })
-            .collect();
-        // debug!("DMR: extracted persistence ids: {persistence_ids:?}");
-
-        persistence_ids
+            .map(|k| self.storage_key_into_parts(k).map(|(_, pid, _)| pid))
+            .collect()
     }
 }
 

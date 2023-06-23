@@ -100,16 +100,17 @@ where
         &self,
         view_id: &Self::ViewId,
     ) -> Result<Option<Self::Projection>, ProjectionError> {
-        let projection_entry = actor::protocol::load_projection(&self.storage, &self.view_key_for(view_id))
-            .await
-            .map_err(|err| ProjectionError::Storage {
-                cause: err.into(),
-                meta: maplit::hashmap! {
-                    META_VIEW_TABLE.to_string() => self.view_storage_table.to_string(),
-                    META_PERSISTENCE_ID.to_string() => view_id.to_string(),
-                    META_PROJECTION_NAME.to_string() => self.name.to_string(),
-                },
-            })?;
+        let projection_entry =
+            actor::protocol::load_projection(&self.storage, &self.view_key_for(view_id))
+                .await
+                .map_err(|err| ProjectionError::Storage {
+                    cause: err.into(),
+                    meta: maplit::hashmap! {
+                        META_VIEW_TABLE.to_string() => self.view_storage_table.to_string(),
+                        META_PERSISTENCE_ID.to_string() => view_id.to_string(),
+                        META_PROJECTION_NAME.to_string() => self.name.to_string(),
+                    },
+                })?;
 
         let projection = projection_entry
             .as_ref()
@@ -119,7 +120,11 @@ where
             })
             .transpose()?;
 
-        debug!(?projection_entry, ?projection, "loaded projection for {view_id}");
+        debug!(
+            ?projection_entry,
+            ?projection,
+            "loaded projection for {view_id}"
+        );
         Ok(projection)
     }
 
@@ -165,7 +170,7 @@ where
         Ok(())
     }
 
-    #[instrument(level="debug", skip(self))]
+    #[instrument(level = "debug", skip(self))]
     async fn read_all_offsets(
         &self,
         projection_name: &str,
@@ -228,7 +233,13 @@ mod actor {
             entry: Option<ProjectionEntry>,
             last_offset: Offset,
         ) -> Result<SavedProjectOutcome, PostgresStorageError> {
-            let command = SaveProjection::new(projection_name, persistence_id, view_key, entry, last_offset);
+            let command = SaveProjection::new(
+                projection_name,
+                persistence_id,
+                view_key,
+                entry,
+                last_offset,
+            );
             actor.send(command).await?
         }
 
@@ -358,7 +369,7 @@ mod actor {
 
     use super::sql_query::ProjectionStorageSqlQueryFactory;
     use crate::postgres::projection_storage::actor::protocol::{
-        LoadAllOffsets, LoadOffset, LoadProjection, SavedProjectOutcome, SaveProjection,
+        LoadAllOffsets, LoadOffset, LoadProjection, SaveProjection, SavedProjectOutcome,
     };
     use crate::postgres::projection_storage::ProjectionEntry;
     use crate::postgres::PostgresStorageError;
@@ -522,11 +533,19 @@ mod actor {
             debug!(?sql_result, "DMR-DDD");
             let result = sql_result
                 .map(|results| {
-                    debug!(?results, "DMR: read all offsets for {}", message.projection_name());
+                    debug!(
+                        ?results,
+                        "DMR: read all offsets for {}",
+                        message.projection_name()
+                    );
                     results.into_iter().collect()
                 })
                 .map_err(|err| {
-                    error!(?err, "DMR: failed reading all offsets for {}", message.projection_name());
+                    error!(
+                        ?err,
+                        "DMR: failed reading all offsets for {}",
+                        message.projection_name()
+                    );
                     err.into()
                 });
 
@@ -543,14 +562,13 @@ mod actor {
             message: LoadOffset,
             _ctx: &mut ActorContext,
         ) -> <LoadOffset as Message>::Result {
-            let foo = sqlx::query(self.sql_query.select_offset())
+            sqlx::query(self.sql_query.select_offset())
                 .bind(message.projection_name)
                 .bind(message.persistence_id.as_persistence_id())
                 .map(|row| self.offset_from_row(row))
                 .fetch_optional(&self.pool)
                 .await
-                .map_err(|err| err.into());
-            foo
+                .map_err(|err| err.into())
         }
     }
 }
@@ -718,7 +736,7 @@ mod sql_query {
                 sql::Select::new()
                     .select(&OFFSET_COLUMNS_REP)
                     .from(self.offset_storage_table.as_str())
-                    .where_clause(&self.where_projection_id())
+                    .where_clause(self.where_projection_id())
                     .order_by(format!("{CURRENT_OFFSET_COL} desc").as_str())
                     .to_string()
             })
@@ -730,7 +748,7 @@ mod sql_query {
                 sql::Select::new()
                     .select(&OFFSET_COLUMNS_REP)
                     .from(self.offset_storage_table.as_str())
-                    .where_clause(&self.where_projection_and_aggregate())
+                    .where_clause(self.where_projection_and_aggregate())
                     .order_by(format!("{CURRENT_OFFSET_COL} desc").as_str())
                     .limit("1")
                     .to_string()
