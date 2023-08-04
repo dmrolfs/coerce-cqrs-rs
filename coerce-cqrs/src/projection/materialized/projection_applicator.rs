@@ -1,6 +1,6 @@
 use crate::projection::materialized::projection_storage::ProjectionStorage;
-use crate::projection::processor::{ProcessEntry, ProcessorContext};
-use crate::projection::{AggregateOffsets, Offset, PersistenceId, ProjectionError};
+use crate::projection::processor::{AggregateOffsets, ProcessEntry, ProcessorContext};
+use crate::projection::{Offset, PersistenceId, ProjectionError};
 use coerce::actor::message::Message;
 use coerce::persistent::journal::storage::JournalEntry;
 use std::fmt;

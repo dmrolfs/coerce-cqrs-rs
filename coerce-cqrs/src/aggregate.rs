@@ -76,7 +76,7 @@ pub enum AggregateError {
 #[cfg(test)]
 mod tests {
     use crate::postgres::PostgresStorageConfig;
-    use crate::projection::{PersistenceId, ProcessorSourceProvider};
+    use crate::projection::{processor::ProcessorSourceProvider, PersistenceId};
     use claim::{assert_ok, assert_some};
     use coerce::actor::system::ActorSystem;
     use coerce::actor::IntoActor;

@@ -2,18 +2,12 @@ mod commit_action;
 mod event_envelope;
 mod materialized;
 mod offset;
-mod processor;
+pub mod processor;
 
 pub use commit_action::PostCommitAction;
 pub use event_envelope::EventEnvelope;
 pub use materialized::{InMemoryProjectionStorage, ProjectionApplicator, ProjectionStorage};
 pub use offset::Offset;
-pub use processor::{
-    AggregateEntries, AggregateOffsets, AggregateSequences, CalculateInterval,
-    CalculateIntervalFactory, ExponentialBackoff, Processor, ProcessorApi, ProcessorCommand,
-    ProcessorErrorHandler, ProcessorSource, ProcessorSourceProvider, ProcessorSourceRef,
-    RegularInterval,
-};
 use std::collections::HashMap;
 
 use coerce::persistent::PersistentActor;

@@ -11,6 +11,7 @@ pub fn connect_with(config: &PostgresStorageConfig) -> PgPool {
         .connect_lazy_with(connection_options)
 }
 
+/// Consolidates configuration settings for postgres journal and projection offsets storage.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PostgresStorageConfig {
     pub key_prefix: String,

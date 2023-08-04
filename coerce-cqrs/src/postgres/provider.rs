@@ -4,10 +4,11 @@ use crate::postgres::config::{self, PostgresStorageConfig};
 use crate::postgres::{
     EntryType, PostgresStorageError, SimpleStorageKeyCodec, StorageKey, StorageKeyCodec,
 };
-use crate::projection::{
-    AggregateEntries, AggregateSequences, PersistenceId, ProcessorSource, ProcessorSourceProvider,
+use crate::projection::processor::{
+    AggregateEntries, AggregateSequences, ProcessorSource, ProcessorSourceProvider,
     ProcessorSourceRef,
 };
+use crate::projection::PersistenceId;
 use anyhow::Context;
 use coerce::actor::system::ActorSystem;
 use coerce::actor::{IntoActor, LocalActorRef};
@@ -18,6 +19,22 @@ use std::fmt;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
+/// Defines the JournalStorage and ProcessorSource traits in terms of a postgres database.
+/// Create by passing the `ActorSystem` and `PostgresStorageConfig` into
+/// `PostgresStorageProvider::connect` function.
+/// With the provider, you can then turn the `ActorSystem` into a persistent system:
+///
+/// ```rust,ignore
+/// let storage_provider = PostgresStorageProvider::connect(storage_config.clone(), &system).await?;
+/// let system = system.to_persistent(Persistence::from(storage_provider));
+/// ```
+///
+/// With a persistent `ActorSystem`, aggregate actors will use the postgres storage provider after
+/// creation:
+///
+/// ```rust,ignore
+/// let actor = MyAggregate::default().into_actor(Some(aggregate_id), &system).await;
+/// ```
 pub struct PostgresStorageProvider {
     postgres: Arc<PostgresJournalStorage>,
 }

@@ -1,7 +1,8 @@
-use crate::projection::{
-    AggregateEntries, AggregateSequences, PersistenceId, ProcessorSource, ProcessorSourceProvider,
+use crate::projection::processor::{
+    AggregateEntries, AggregateSequences, ProcessorSource, ProcessorSourceProvider,
     ProcessorSourceRef,
 };
+use crate::projection::PersistenceId;
 use anyhow::Context;
 use coerce::persistent::journal::provider::StorageProvider;
 use coerce::persistent::journal::storage::{JournalEntry, JournalStorage, JournalStorageRef};

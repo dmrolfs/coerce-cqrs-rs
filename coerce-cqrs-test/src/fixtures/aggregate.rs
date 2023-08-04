@@ -358,7 +358,7 @@ impl AggregateState<TestCommand, TestEvent> for TestState {
 
 impl Default for TestState {
     fn default() -> Self {
-        Self::Quiescent(QuiescentState::default())
+        Self::Quiescent(QuiescentState)
     }
 }
 

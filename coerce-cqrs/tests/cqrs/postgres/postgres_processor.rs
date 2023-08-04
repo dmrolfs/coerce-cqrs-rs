@@ -7,8 +7,8 @@ use coerce::persistent::Persistence;
 use coerce_cqrs::postgres::{
     PostgresProjectionStorage, PostgresStorageConfig, PostgresStorageProvider,
 };
-use coerce_cqrs::projection::{PersistenceId, Processor, ProjectionApplicator, ProjectionStorage};
-use coerce_cqrs::projection::{ProcessorSourceProvider, RegularInterval};
+use coerce_cqrs::projection::processor::{Processor, ProcessorSourceProvider, RegularInterval};
+use coerce_cqrs::projection::{PersistenceId, ProjectionApplicator, ProjectionStorage};
 use coerce_cqrs::CommandResult;
 use coerce_cqrs_test::fixtures::aggregate::{
     self, Summarize, TestAggregate, TestCommand, TestEvent, TestState, TestView,
@@ -208,7 +208,7 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     // assert_eq!(offset.as_i64(), 6);
 
     tracing::info!("**** STOP PROCESSOR...");
-    assert_ok!(coerce_cqrs::projection::ProcessorCommand::stop(&stop_api).await);
+    assert_ok!(coerce_cqrs::projection::processor::ProcessorCommand::stop(&stop_api).await);
     tracing::info!("**** SHUTTING DOWN ACTOR SYSTEM...");
     system.shutdown().await;
     tracing::info!("**** WAITING FOR PROCESSOR TO FINISH...");

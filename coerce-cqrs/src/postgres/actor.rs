@@ -3,7 +3,7 @@ use crate::postgres::{
     EntryType, PostgresStorageConfig, PostgresStorageError, StorageKey, StorageKeyCodec,
     StorageKeyParts,
 };
-use crate::projection::{AggregateEntries, PersistenceId, PostCommitAction};
+use crate::projection::{processor::AggregateEntries, PersistenceId, PostCommitAction};
 use coerce::actor::context::ActorContext;
 use coerce::actor::message::{Handler, Message};
 use coerce::actor::Actor;
@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub(in crate::postgres) mod protocol {
     use super::*;
     use crate::postgres::{PostgresStorageError, StorageKey};
-    use crate::projection::{AggregateEntries, AggregateSequences};
+    use crate::projection::processor::{AggregateEntries, AggregateSequences};
     use std::fmt;
 
     #[derive(Debug)]

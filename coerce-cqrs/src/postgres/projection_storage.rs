@@ -1,8 +1,9 @@
 use crate::postgres::config;
 use crate::postgres::projection_storage::actor::PostgresProjectionStorageActor;
 use crate::postgres::{PostgresStorageConfig, PostgresStorageError};
+use crate::projection::processor::AggregateOffsets;
 use crate::projection::{
-    AggregateOffsets, Offset, PersistenceId, ProjectionError, ProjectionStorage, META_OFFSET_TABLE,
+    Offset, PersistenceId, ProjectionError, ProjectionStorage, META_OFFSET_TABLE,
     META_PERSISTENCE_ID, META_PROJECTION_NAME, META_VIEW_TABLE,
 };
 use coerce::actor::system::ActorSystem;
