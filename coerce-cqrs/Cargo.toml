@@ -16,14 +16,14 @@ categories = ["actor", "event", "cqrs"]
 coerce = { version = "0.8.10", features = ["full",] }
 coerce-macros = "0.2.0"
 
-anyhow = "1.0.71"
-async-trait = "0.1.68"
+anyhow = "1.0.72"
+async-trait = "0.1.72"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-dashmap = "5.4.0"
+dashmap = "5.5.0"
 #delegate = "0.9.0"
 futures = "0.3.28"
 iso8601-timestamp = "0.2.11"
-lazy-regex = "2.5.0"
+lazy-regex = "3.0.1"
 maplit = "1.0.2"
 once_cell = "1.18.0"
 #rand = "0.8.5"
@@ -35,23 +35,23 @@ pretty-type-name = "1.0.1"
 #jwt = "0.16.0"
 #hmac = "0.12.1"
 rand = "0.8.5"
-regex = "1.8.4"
+regex = "1.9.1"
 secrecy = { version = "0.8.0", features = ["serde"] }
-serde = { version = "1.0.164", features = ["derive", "rc"] }
-serde_json = "1.0.97"
+serde = { version = "1.0.181", features = ["derive", "rc"] }
+serde_json = "1.0.104"
 #sha2 = "0.10.6"
 smol_str = { version = "0.2.0", features = ["serde"] }
 sql_query_builder = { version = "1.1.4", features = ["postgresql"] }
-sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-rustls"] }
+sqlx = { version = "0.7.1", features = ["postgres", "runtime-tokio-rustls"] }
 strum = "0.25.0"
-strum_macros = "0.25.0"
+strum_macros = "0.25.1"
 tagid = { git = "https://github.com/dmrolfs/tagid-rs", features = ["envelope"] }
-thiserror = "1.0.40"
-tokio = { version = "1.28.2", features = ["full"] }
+thiserror = "1.0.44"
+tokio = { version = "1.29.1", features = ["full"] }
 tokio-stream = "0.1.14"
 tokio-util = { version = "0.7.8", features = ["full"] }
 tracing = { version = "0.1.37", features = ["valuable"] }
-uuid = { version = "1.3.4", features = ["serde", "v4"] }
+uuid = { version = "1.4.1", features = ["serde", "v4"] }
 valuable = { version = "0.1.0", features = ["derive"] }
 
 #axum = { version = "0.6.8", features = ["query"] }
@@ -61,7 +61,7 @@ valuable = { version = "0.1.0", features = ["derive"] }
 [dev-dependencies]
 coerce-cqrs-test = { path = "../coerce-cqrs-test" }
 claim = { git = "https://github.com/dmrolfs/rust-claim", branch = "bump-autocfg-version" }
-pretty_assertions = "1.3.0"
-serde_test = "1.0.164"
+pretty_assertions = "1.4.0"
+serde_test = "1.0.176"
 static_assertions = "1.1.0"
 tokio-test = "0.4.2"

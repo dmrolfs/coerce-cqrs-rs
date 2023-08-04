@@ -224,7 +224,7 @@ impl PostgresJournal {
             .bind(EMPTY_META.clone()) // meta_payload
             .bind(crate::util::now_timestamp()); // created_at
 
-        let query_result = query.execute(tx).await.map_err(|err| err.into());
+        let query_result = query.execute(&mut **tx).await.map_err(|err| err.into());
         match &query_result {
             Ok(_) => debug!("postgres journal message saved."),
             Err(error) => error!("postgres journal failed to persist message: {error:?}"),
@@ -306,7 +306,7 @@ impl Handler<WriteSnapshot> for PostgresJournal {
             .bind(EMPTY_META.clone()) // meta_payload
             .bind(now) // created_at
             .bind(now) // last_updated_at
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
 
         if let Err(error) = tx.commit().await {
@@ -523,7 +523,7 @@ impl Handler<DeleteMessages> for PostgresJournal {
                 .bind(0),
         };
 
-        let _ = query.execute(&mut tx).await?;
+        let _ = query.execute(&mut *tx).await?;
 
         if let Err(error) = tx.commit().await {
             error!(

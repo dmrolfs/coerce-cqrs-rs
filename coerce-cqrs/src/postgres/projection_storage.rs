@@ -467,7 +467,7 @@ mod actor {
                         .bind(entry.bytes.to_vec())
                         .bind(now)
                         .bind(now)
-                        .execute(&mut tx)
+                        .execute(&mut *tx)
                         .await
                         .map_err(|err| err.into()),
                 ),
@@ -481,7 +481,7 @@ mod actor {
                 .bind(&persistence_id)
                 .bind(last_offset.as_i64())
                 .bind(crate::util::timestamp_seconds(last_offset.timestamp()))
-                .execute(&mut tx)
+                .execute(&mut *tx)
                 .await
                 .map_err(|err| PostgresStorageError::Storage(err.into()));
 
