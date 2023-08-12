@@ -4,11 +4,11 @@ use coerce::actor::ActorRefErr;
 use coerce::persistent::types::JournalTypes;
 use coerce::persistent::{PersistentActor, Recover, RecoverSnapshot};
 use coerce_cqrs::projection::processor::ProcessResult;
+use coerce_cqrs::projection::ProjectionError;
 use coerce_cqrs::{AggregateError, AggregateState, ApplyAggregateEvent, CommandResult};
 use std::fmt;
 use std::marker::PhantomData;
 use tagid::{CuidGenerator, Entity, Label};
-use coerce_cqrs::projection::ProjectionError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestView {
@@ -254,14 +254,6 @@ impl Handler<Summarize<Self>> for TestAggregate {
         self.summarize(ctx)
     }
 }
-
-// #[async_trait]
-// impl<A: PersistentActor + Summarizable> Handler<Summarize<Self>> for A {
-//     #[instrument(level = "debug", skip(_msg, ctx))]
-//     async fn handle(&mut self, _msg: Summarize<A>, ctx: &mut ActorContext) -> <Summarize<A> as Message>::Result {
-//         self.summarize(ctx)
-//     }
-// }
 
 #[async_trait]
 impl Handler<ProvokeError> for TestAggregate {

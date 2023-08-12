@@ -1,8 +1,3 @@
-use crate::projection::ProjectionError;
-use coerce::persistent::journal::storage::JournalEntry;
-use std::fmt::Debug;
-use strum_macros::{Display, EnumString, EnumVariantNames, IntoStaticStr};
-
 mod interval;
 #[allow(clippy::module_inception)]
 mod processor;
@@ -16,6 +11,11 @@ pub use processor::{
     ProcessorEngine, ProcessorLifecycle, ProcessorSource, ProcessorSourceProvider,
     ProcessorSourceRef,
 };
+
+use crate::projection::ProjectionError;
+use coerce::persistent::journal::storage::JournalEntry;
+use std::fmt::Debug;
+use strum_macros::{Display, EnumString, EnumVariantNames, IntoStaticStr};
 
 pub type ProcessorErrorHandler = dyn Fn(ProjectionError) + Send + Sync + 'static;
 
@@ -86,35 +86,10 @@ where
 pub trait ProcessEntry {
     type Projection: Debug + Clone + Send;
 
-    // async fn load_projection(
-    //     &self,
-    //     persistence_id: &PersistenceId,
-    //     ctx: &ProcessorContext,
-    // ) -> Result<Self::Projection, ProjectionError>;
-
     fn apply_entry_to_projection(
         &self,
         projection: &Self::Projection,
         entry: JournalEntry,
         ctx: &ProcessorContext,
     ) -> Result<ProcessResult<Self::Projection>, ProjectionError>;
-
-    // async fn save_projection_and_offset(
-    //     &self,
-    //     persistence_id: &PersistenceId,
-    //     projection: Option<Self::Projection>,
-    //     last_offset: Offset,
-    //     ctx: &ProcessorContext,
-    // ) -> Result<Offset, ProjectionError>;
-
-    // async fn read_all_offsets(
-    //     &self,
-    //     projection_name: &str,
-    // ) -> Result<AggregateOffsets, ProjectionError>;
-
-    // async fn read_offset_for_persistence_id(
-    //     &self,
-    //     projection_name: &str,
-    //     persistence_id: &PersistenceId,
-    // ) -> Result<Option<Offset>, ProjectionError>;
 }

@@ -79,7 +79,6 @@ impl Processor {
     where
         S: ProjectionStorage,
         H: ProcessEntry,
-        // O: OffsetStorage,
         I: CalculateInterval,
     {
         ProcessorEngine::new(projection_name)
@@ -91,7 +90,6 @@ impl Processor {
     where
         S: ProjectionStorage,
         H: ProcessEntry,
-        // O: OffsetStorage,
         I: CalculateInterval,
     {
         Self::builder(projection_name.into())
@@ -114,14 +112,12 @@ pub struct Building<S, H, I>
 where
     S: ProjectionStorage,
     H: ProcessEntry,
-    // O: OffsetStorage,
     I: CalculateInterval,
 {
     projection_name: String,
     entry_handler: Option<Arc<H>>,
     source: Option<ProcessorSourceRef>,
     projection_source: Option<Arc<S>>,
-    // offset_storage: Option<Arc<O>>,
     interval_calculator: Option<I>,
 }
 
@@ -129,15 +125,12 @@ impl<S, H, I> Debug for Building<S, H, I>
 where
     S: ProjectionStorage,
     H: ProcessEntry + Debug,
-    // O: OffsetStorage + Debug,
     I: CalculateInterval + Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Building")
             .field("projection_name", &self.projection_name)
             .field("entry_handler", &self.entry_handler)
-            // .field("projection_source", &self.projection_source)
-            // .field("offset_storage", &self.offset_storage)
             .field("interval_calculator", &self.interval_calculator)
             .finish()
     }
@@ -147,7 +140,6 @@ impl<S, H, I> ProcessorLifecycle for Building<S, H, I>
 where
     S: ProjectionStorage,
     H: ProcessEntry,
-    // O: OffsetStorage,
     I: CalculateInterval,
 {
 }
@@ -156,7 +148,6 @@ impl<S, H, I> ProcessorEngine<Building<S, H, I>>
 where
     S: ProjectionStorage,
     H: ProcessEntry,
-    // O: OffsetStorage,
     I: CalculateInterval,
 {
     pub fn new(projection_name: impl Into<String>) -> Self {
@@ -166,7 +157,6 @@ where
                 entry_handler: None,
                 source: None,
                 projection_source: None,
-                // offset_storage: None,
                 interval_calculator: None,
             },
         }
@@ -202,16 +192,6 @@ where
         }
     }
 
-    // #[allow(clippy::missing_const_for_fn)]
-    // pub fn with_offset_storage(self, offset_storage: Arc<O>) -> Self {
-    //     Self {
-    //         inner: Building {
-    //             offset_storage: Some(offset_storage),
-    //             ..self.inner
-    //         },
-    //     }
-    // }
-
     #[allow(clippy::missing_const_for_fn)]
     pub fn with_interval_calculator(self, interval_calculator: I) -> Self {
         Self {
@@ -240,11 +220,6 @@ where
             .projection_source
             .ok_or_else(|| ProcessorError::UninitializedField("projection_source".to_string()))?;
 
-        // let offset_storage = self
-        //     .inner
-        //     .offset_storage
-        //     .ok_or_else(|| ProcessorError::UninitializedField("offset_storage".to_string()))?;
-
         let interval_calculator = self
             .inner
             .interval_calculator
@@ -256,7 +231,6 @@ where
                 entry_handler,
                 source,
                 projection_storage,
-                // offset_storage,
                 interval_calculator,
                 tx_api,
                 rx_api,
@@ -269,14 +243,12 @@ pub struct Ready<S, H, I>
 where
     S: ProjectionStorage,
     H: ProcessEntry,
-    // O: OffsetStorage,
     I: CalculateInterval,
 {
     projection_name: String,
     entry_handler: Arc<H>,
     source: ProcessorSourceRef,
     projection_storage: Arc<S>,
-    // offset_storage: Arc<O>,
     interval_calculator: I,
     tx_api: ProcessorApi,
     rx_api: mpsc::UnboundedReceiver<protocol::ProcessorCommand>,
@@ -286,15 +258,12 @@ impl<S, H, I> Debug for Ready<S, H, I>
 where
     S: ProjectionStorage,
     H: ProcessEntry + Debug,
-    // O: OffsetStorage + Debug,
     I: CalculateInterval + Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Ready")
             .field("projection_name", &self.projection_name)
-            // .field("projection_storage", &self.projection_storage)
             .field("entry_handler", &self.entry_handler)
-            // .field("offset_storage", &self.offset_storage)
             .field("interval_calculator", &self.interval_calculator)
             .finish()
     }
@@ -304,7 +273,6 @@ impl<S, H, I> ProcessorLifecycle for Ready<S, H, I>
 where
     S: ProjectionStorage,
     H: ProcessEntry,
-    // O: OffsetStorage,
     I: CalculateInterval,
 {
 }
@@ -312,7 +280,6 @@ where
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProcessorContext {
     pub projection_name: String,
-    // pub projection_id: ProjectionId,
     nr_repeat_empties: u32,
     nr_repeat_failures: u32,
 }
@@ -332,7 +299,6 @@ where
     S: ProjectionStorage<ViewId = PersistenceId, Projection = P> + Send + Sync + 'static,
     H: ProcessEntry<Projection = P> + Send + Sync + 'static,
     P: Default + Debug + Clone + Send,
-    // O: OffsetStorage + Send + Sync + 'static,
     I: CalculateInterval + Send + Sync + 'static,
 {
     #[allow(dead_code)]
@@ -349,10 +315,8 @@ where
         let handle = tokio::spawn(async move {
             let mut context = ProcessorContext::new(&projection_name);
 
-            // let handler = self.inner.entry_handler.clone();
             let source = self.inner.source.clone();
             let projection_storage = self.inner.projection_storage.clone();
-            // let offset_storage = self.inner.offset_storage.clone();
 
             loop {
                 tokio::select! {
@@ -404,7 +368,6 @@ where
         projection_name: &str,
         source: Arc<dyn ProcessorSource>,
         projection_storage: Arc<S>,
-        // offset_storage: Arc<O>,
     ) -> anyhow::Result<Option<AggregateEntries>> {
         let offsets: Vec<_> = projection_storage //offset_storage
             .read_all_offsets(projection_name)
@@ -563,7 +526,6 @@ where
         &mut self,
         persistence_id: &PersistenceId,
         entries: Vec<JournalEntry>,
-        // handler: &H,
         ctx: &ProcessorContext,
     ) -> Result<(), ProjectionError> {
         if entries.is_empty() {
@@ -582,7 +544,6 @@ where
             entries.len()
         );
 
-        // let mut updated_projection = None;
         let mut any_update = false;
         let mut last_offset = None;
         for entry in entries {

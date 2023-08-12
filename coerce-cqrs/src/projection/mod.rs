@@ -8,10 +8,10 @@ pub use commit_action::PostCommitAction;
 pub use event_envelope::EventEnvelope;
 pub use materialized::{InMemoryProjectionStorage, ProjectionApplicator, ProjectionStorage};
 pub use offset::Offset;
-use std::collections::HashMap;
 
 use coerce::persistent::PersistentActor;
 use smol_str::SmolStr;
+use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::str::FromStr;
 use tagid::{Entity, Id, IdGenerator};
@@ -101,47 +101,6 @@ where
         }
     }
 }
-
-// #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-// #[repr(transparent)]
-// #[serde(transparent)]
-// pub struct ProjectionId(SmolStr);
-//
-// impl fmt::Display for ProjectionId {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(f, "{}", self.0)
-//     }
-// }
-//
-// impl ProjectionId {
-//     pub fn new(id: impl AsRef<str>) -> Self {
-//         Self(SmolStr::new(id.as_ref()))
-//     }
-// }
-//
-// impl From<String> for ProjectionId {
-//     fn from(id: String) -> Self {
-//         Self::new(id)
-//     }
-// }
-//
-// impl From<&str> for ProjectionId {
-//     fn from(id: &str) -> Self {
-//         Self::new(id)
-//     }
-// }
-//
-// impl From<SmolStr> for ProjectionId {
-//     fn from(id: SmolStr) -> Self {
-//         Self::new(id.as_str())
-//     }
-// }
-//
-// impl AsRef<str> for ProjectionId {
-//     fn as_ref(&self) -> &str {
-//         self.0.as_str()
-//     }
-// }
 
 #[async_trait]
 pub trait EventProcessor<E> {

@@ -57,18 +57,6 @@ where
 {
     type Projection = <S as ProjectionStorage>::Projection;
 
-    // #[instrument(level = "debug", skip(self, _ctx))]
-    // async fn load_projection(
-    //     &self,
-    //     persistence_id: &PersistenceId,
-    //     _ctx: &ProcessorContext,
-    // ) -> Result<Self::Projection, ProjectionError> {
-    //     self.storage
-    //         .load_projection(persistence_id)
-    //         .await
-    //         .map(|p| p.unwrap_or_default())
-    // }
-
     #[instrument(level="debug", skip(self, entry, _ctx), fields(entry_payload=%entry.sequence))]
     fn apply_entry_to_projection(
         &self,
@@ -77,49 +65,6 @@ where
         _ctx: &ProcessorContext,
     ) -> Result<ProcessResult<Self::Projection>, ProjectionError> {
         let event = E::from_bytes(entry.bytes.to_vec())?;
-        // {
-        //     Ok(event) => event,
-        //     Err(error) => {
-        //         error!(?error, context=?ctx, "failed to decode event entry");
-        //         return projection
-        //             .map(ProcessResult::Unchanged)
-        //             .unwrap_or(ProcessResult::None);
-        //     }
-        // };
-
         (self.processor)(projection, event)
     }
-
-    // #[instrument(level = "debug", skip(self, _ctx))]
-    // async fn save_projection_and_offset(
-    //     &self,
-    //     persistence_id: &PersistenceId,
-    //     projection: Option<Self::Projection>,
-    //     last_offset: Offset,
-    //     _ctx: &ProcessorContext,
-    // ) -> Result<Offset, ProjectionError> {
-    //     self.storage
-    //         .save_projection(persistence_id, projection, last_offset)
-    //         .await?;
-    //     Ok(last_offset)
-    // }
-
-    // #[instrument(level = "debug", skip(self))]
-    // async fn read_all_offsets(
-    //     &self,
-    //     projection_name: &str,
-    // ) -> Result<AggregateOffsets, ProjectionError> {
-    //     self.storage.read_all_offsets(projection_name).await
-    // }
-
-    // #[instrument(level = "debug", skip(self))]
-    // async fn read_offset_for_persistence_id(
-    //     &self,
-    //     projection_name: &str,
-    //     persistence_id: &PersistenceId,
-    // ) -> Result<Option<Offset>, ProjectionError> {
-    //     self.storage
-    //         .read_offset(projection_name, persistence_id)
-    //         .await
-    // }
 }
