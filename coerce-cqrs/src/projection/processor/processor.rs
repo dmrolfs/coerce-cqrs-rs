@@ -1,7 +1,7 @@
 use crate::projection::processor::interval::CalculateInterval;
 use crate::projection::processor::processor::protocol::ProcessorApi;
-use crate::projection::processor::ProcessEntry;
-use crate::projection::{Offset, PersistenceId, ProjectionError};
+use crate::projection::processor::{ProcessEntry, ProcessResult};
+use crate::projection::{Offset, PersistenceId, ProjectionError, ProjectionStorage};
 use coerce::persistent::journal::storage::JournalEntry;
 use coerce::persistent::storage::JournalStorage;
 use coerce::persistent::PersistentActor;
@@ -73,8 +73,11 @@ pub trait ProcessorSource: JournalStorage {
 pub struct Processor;
 
 impl Processor {
-    pub fn builder<H, I>(projection_name: impl Into<String>) -> ProcessorEngine<Building<H, I>>
+    pub fn builder<S, H, I>(
+        projection_name: impl Into<String>,
+    ) -> ProcessorEngine<Building<S, H, I>>
     where
+        S: ProjectionStorage,
         H: ProcessEntry,
         // O: OffsetStorage,
         I: CalculateInterval,
@@ -82,10 +85,11 @@ impl Processor {
         ProcessorEngine::new(projection_name)
     }
 
-    pub fn builder_for<A: PersistentActor, H, I>(
+    pub fn builder_for<A: PersistentActor, S, H, I>(
         projection_name: impl Into<String>,
-    ) -> ProcessorEngine<Building<H, I>>
+    ) -> ProcessorEngine<Building<S, H, I>>
     where
+        S: ProjectionStorage,
         H: ProcessEntry,
         // O: OffsetStorage,
         I: CalculateInterval,
@@ -106,8 +110,9 @@ pub struct ProcessorEngine<P: ProcessorLifecycle> {
     inner: P,
 }
 
-pub struct Building<H, I>
+pub struct Building<S, H, I>
 where
+    S: ProjectionStorage,
     H: ProcessEntry,
     // O: OffsetStorage,
     I: CalculateInterval,
@@ -115,12 +120,14 @@ where
     projection_name: String,
     entry_handler: Option<Arc<H>>,
     source: Option<ProcessorSourceRef>,
+    projection_source: Option<Arc<S>>,
     // offset_storage: Option<Arc<O>>,
     interval_calculator: Option<I>,
 }
 
-impl<H, I> Debug for Building<H, I>
+impl<S, H, I> Debug for Building<S, H, I>
 where
+    S: ProjectionStorage,
     H: ProcessEntry + Debug,
     // O: OffsetStorage + Debug,
     I: CalculateInterval + Debug,
@@ -129,22 +136,25 @@ where
         f.debug_struct("Building")
             .field("projection_name", &self.projection_name)
             .field("entry_handler", &self.entry_handler)
+            // .field("projection_source", &self.projection_source)
             // .field("offset_storage", &self.offset_storage)
             .field("interval_calculator", &self.interval_calculator)
             .finish()
     }
 }
 
-impl<H, I> ProcessorLifecycle for Building<H, I>
+impl<S, H, I> ProcessorLifecycle for Building<S, H, I>
 where
+    S: ProjectionStorage,
     H: ProcessEntry,
     // O: OffsetStorage,
     I: CalculateInterval,
 {
 }
 
-impl<H, I> ProcessorEngine<Building<H, I>>
+impl<S, H, I> ProcessorEngine<Building<S, H, I>>
 where
+    S: ProjectionStorage,
     H: ProcessEntry,
     // O: OffsetStorage,
     I: CalculateInterval,
@@ -155,6 +165,7 @@ where
                 projection_name: projection_name.into(),
                 entry_handler: None,
                 source: None,
+                projection_source: None,
                 // offset_storage: None,
                 interval_calculator: None,
             },
@@ -181,6 +192,16 @@ where
         }
     }
 
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn with_projection_source(self, projection_source: Arc<S>) -> Self {
+        Self {
+            inner: Building {
+                projection_source: Some(projection_source),
+                ..self.inner
+            },
+        }
+    }
+
     // #[allow(clippy::missing_const_for_fn)]
     // pub fn with_offset_storage(self, offset_storage: Arc<O>) -> Self {
     //     Self {
@@ -201,17 +222,24 @@ where
         }
     }
 
-    pub fn finish(self) -> Result<ProcessorEngine<Ready<H, I>>, ProcessorError> {
+    pub fn finish(self) -> Result<ProcessorEngine<Ready<S, H, I>>, ProcessorError> {
         let (tx_api, rx_api) = mpsc::unbounded_channel();
 
         let entry_handler = self
             .inner
             .entry_handler
             .ok_or_else(|| ProcessorError::UninitializedField("entry_handler".to_string()))?;
+
         let source = self
             .inner
             .source
             .ok_or_else(|| ProcessorError::UninitializedField("source".to_string()))?;
+
+        let projection_storage = self
+            .inner
+            .projection_source
+            .ok_or_else(|| ProcessorError::UninitializedField("projection_source".to_string()))?;
+
         // let offset_storage = self
         //     .inner
         //     .offset_storage
@@ -227,6 +255,7 @@ where
                 projection_name: self.inner.projection_name,
                 entry_handler,
                 source,
+                projection_storage,
                 // offset_storage,
                 interval_calculator,
                 tx_api,
@@ -236,8 +265,9 @@ where
     }
 }
 
-pub struct Ready<H, I>
+pub struct Ready<S, H, I>
 where
+    S: ProjectionStorage,
     H: ProcessEntry,
     // O: OffsetStorage,
     I: CalculateInterval,
@@ -245,14 +275,16 @@ where
     projection_name: String,
     entry_handler: Arc<H>,
     source: ProcessorSourceRef,
+    projection_storage: Arc<S>,
     // offset_storage: Arc<O>,
     interval_calculator: I,
     tx_api: ProcessorApi,
     rx_api: mpsc::UnboundedReceiver<protocol::ProcessorCommand>,
 }
 
-impl<H, I> Debug for Ready<H, I>
+impl<S, H, I> Debug for Ready<S, H, I>
 where
+    S: ProjectionStorage,
     H: ProcessEntry + Debug,
     // O: OffsetStorage + Debug,
     I: CalculateInterval + Debug,
@@ -260,6 +292,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Ready")
             .field("projection_name", &self.projection_name)
+            // .field("projection_storage", &self.projection_storage)
             .field("entry_handler", &self.entry_handler)
             // .field("offset_storage", &self.offset_storage)
             .field("interval_calculator", &self.interval_calculator)
@@ -267,8 +300,9 @@ where
     }
 }
 
-impl<H, I> ProcessorLifecycle for Ready<H, I>
+impl<S, H, I> ProcessorLifecycle for Ready<S, H, I>
 where
+    S: ProjectionStorage,
     H: ProcessEntry,
     // O: OffsetStorage,
     I: CalculateInterval,
@@ -293,9 +327,11 @@ impl ProcessorContext {
     }
 }
 
-impl<H, I> ProcessorEngine<Ready<H, I>>
+impl<S, H, I, P> ProcessorEngine<Ready<S, H, I>>
 where
-    H: ProcessEntry + Send + Sync + 'static,
+    S: ProjectionStorage<ViewId = PersistenceId, Projection = P> + Send + Sync + 'static,
+    H: ProcessEntry<Projection = P> + Send + Sync + 'static,
+    P: Default + Debug + Clone + Send,
     // O: OffsetStorage + Send + Sync + 'static,
     I: CalculateInterval + Send + Sync + 'static,
 {
@@ -313,8 +349,9 @@ where
         let handle = tokio::spawn(async move {
             let mut context = ProcessorContext::new(&projection_name);
 
-            let handler = self.inner.entry_handler.clone();
+            // let handler = self.inner.entry_handler.clone();
             let source = self.inner.source.clone();
+            let projection_storage = self.inner.projection_storage.clone();
             // let offset_storage = self.inner.offset_storage.clone();
 
             loop {
@@ -330,10 +367,9 @@ where
                     //     break;
                     // },
 
-
-                    latest = Self::read_all_latest_messages(&projection_name, source.clone(), handler.clone()) => {
+                    latest = Self::read_all_latest_messages(&projection_name, source.clone(), projection_storage.clone()) => {
                         match latest {
-                            Ok(l) => { context = self.do_handle_latest_entries(l, handler.clone(), context).await?; },
+                            Ok(l) => { context = self.do_handle_latest_entries(l, context).await?; },
 
                             Err(error) if 3 < context.nr_repeat_failures => {
                                 error!(?error, "too many {projection_name} processor failures - stopping");
@@ -363,14 +399,14 @@ where
         })
     }
 
-    #[instrument(level = "debug", skip(source, handler))]
+    #[instrument(level = "debug", skip(source, projection_storage))]
     async fn read_all_latest_messages(
         projection_name: &str,
         source: Arc<dyn ProcessorSource>,
-        handler: Arc<H>,
+        projection_storage: Arc<S>,
         // offset_storage: Arc<O>,
     ) -> anyhow::Result<Option<AggregateEntries>> {
-        let offsets: Vec<_> = handler //offset_storage
+        let offsets: Vec<_> = projection_storage //offset_storage
             .read_all_offsets(projection_name)
             .await?
             .into_iter()
@@ -429,8 +465,8 @@ where
                 );
                 let offset = self
                     .inner
-                    .entry_handler
-                    .read_offset_for_persistence_id(&ctx.projection_name, &pid)
+                    .projection_storage
+                    .read_offset(&ctx.projection_name, &pid)
                     .await
                     .ok()
                     .flatten();
@@ -440,11 +476,10 @@ where
         }
     }
 
-    #[instrument(level = "debug", skip(self, latest, handler))]
+    #[instrument(level = "debug", skip(self, latest))]
     async fn do_handle_latest_entries(
         &mut self,
         latest: Option<AggregateEntries>,
-        handler: Arc<H>,
         mut context: ProcessorContext,
     ) -> Result<ProcessorContext, ProjectionError> {
         debug!(
@@ -477,7 +512,7 @@ where
                         .do_process_aggregate_entries(
                             &persistence_id,
                             entries,
-                            handler.as_ref(),
+                            // handler.as_ref(),
                             &context,
                         )
                         .await;
@@ -492,9 +527,9 @@ where
             }
         };
 
-        debug!("DMR - entry_process failure: {error:?}");
         match error {
             None => {
+                debug!("DMR - entry_process completed.");
                 self.do_delay(&context).await;
                 Ok(context)
             }
@@ -523,34 +558,65 @@ where
         }
     }
 
-    #[instrument(level = "debug", skip(self, handler))]
+    #[instrument(level = "debug", skip(self))]
     async fn do_process_aggregate_entries(
         &mut self,
         persistence_id: &PersistenceId,
         entries: Vec<JournalEntry>,
-        handler: &H,
+        // handler: &H,
         ctx: &ProcessorContext,
     ) -> Result<(), ProjectionError> {
         if entries.is_empty() {
             return Ok(());
         }
 
-        let mut projection = handler.load_projection(persistence_id, ctx).await?;
+        let mut projection = self
+            .inner
+            .projection_storage
+            .load_projection(persistence_id)
+            .await?
+            .unwrap_or_default();
         debug!(
             ?projection,
             "DMR: # LATEST pulled: {persistence_id} => {}",
             entries.len()
         );
 
+        // let mut updated_projection = None;
         let mut any_update = false;
         let mut last_offset = None;
         for entry in entries {
             let offset_sequence = entry.sequence;
-            let (p, is_updated) = handler.apply_entry_to_projection(projection, entry, ctx);
-            projection = p;
-            if is_updated {
-                any_update = true;
+
+            let projection_result =
+                self.inner
+                    .entry_handler
+                    .apply_entry_to_projection(&projection, entry, ctx);
+
+            match projection_result {
+                Ok(ProcessResult::Changed(updated_projection)) => {
+                    info!(
+                        ?updated_projection, old_projection=?projection,
+                        "DMR: projection CHANGED by event entry"
+                    );
+                    projection = updated_projection;
+                    any_update = true;
+                }
+
+                Ok(ProcessResult::Unchanged) => {
+                    debug!(?projection, "No change to projection for event entry.");
+                }
+
+                Err(ProjectionError::EventApplication(error)) => {
+                    warn!(
+                        ?projection,
+                        "failed to apply entry to projection - skipping entry: {error:?}"
+                    );
+                }
+
+                Err(error) => return Err(error),
             }
+
             last_offset = Some(Offset::new(offset_sequence));
         }
         let last_offset = last_offset.unwrap();
@@ -559,8 +625,9 @@ where
 
         debug!(?last_offset, "DMR: applied to projection pulled entries for {persistence_id} => {updated_projection:?}");
 
-        handler
-            .save_projection_and_offset(persistence_id, updated_projection, last_offset, ctx)
+        self.inner
+            .projection_storage
+            .save_projection(persistence_id, updated_projection, last_offset)
             .await?;
         Ok(())
     }

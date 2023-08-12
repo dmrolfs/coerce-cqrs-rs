@@ -179,4 +179,7 @@ pub enum ProjectionError {
         cause: anyhow::Error,
         meta: HashMap<String, String>,
     },
+
+    #[error("Failed during while applying event to projection: {0}")]
+    EventApplication(#[from] anyhow::Error),
 }

@@ -40,9 +40,10 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
     let pid = PersistenceId::from_aggregate_id::<TestAggregate>(aid.id.as_str());
     let vid = pid.clone();
 
-    let processor = Processor::builder_for::<TestAggregate, _, _>("test_memory_projection")
+    let processor = Processor::builder_for::<TestAggregate, _, _, _>("test_memory_projection")
         .with_entry_handler(view_apply)
         .with_source(storage.clone())
+        .with_projection_source(view_storage.clone())
         .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(25)));
 
     let processor = assert_ok!(processor.finish());
@@ -67,11 +68,16 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
     const DESCRIPTION: &str = "tests starting now!... now... now";
 
     assert_ok!(actor.notify(TestCommand::Start(DESCRIPTION.to_string())));
+    let summary = assert_ok!(actor.send(Summarize::default()).await);
+    assert_eq!(summary, TestState::active(DESCRIPTION, vec![]));
 
     tracing::info!("**** CMD - TEST-1");
     assert_ok!(actor.notify(TestCommand::Test(1)));
     let summary = assert_ok!(actor.send(Summarize::default()).await);
     assert_eq!(summary, TestState::active(DESCRIPTION, vec![1]));
+
+    let events = storage.read_latest_messages(&aid.to_string(), 0).await;
+    info!(?events, "**** after TEST-1.");
 
     tracing::info!("**** CMD - TEST-2");
     assert_ok!(actor.notify(TestCommand::Test(2)));

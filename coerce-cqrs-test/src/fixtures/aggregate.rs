@@ -3,10 +3,12 @@ use coerce::actor::message::{Handler, Message};
 use coerce::actor::ActorRefErr;
 use coerce::persistent::types::JournalTypes;
 use coerce::persistent::{PersistentActor, Recover, RecoverSnapshot};
+use coerce_cqrs::projection::processor::ProcessResult;
 use coerce_cqrs::{AggregateError, AggregateState, ApplyAggregateEvent, CommandResult};
 use std::fmt;
 use std::marker::PhantomData;
 use tagid::{CuidGenerator, Entity, Label};
+use coerce_cqrs::projection::ProjectionError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestView {
@@ -29,41 +31,51 @@ impl Default for TestView {
 
 #[allow(dead_code, clippy::missing_const_for_fn)]
 #[instrument(level = "debug")]
-pub fn apply_test_event_to_view(mut view: TestView, event: TestEvent) -> (TestView, bool) {
-    let is_updated = match &event {
+pub fn apply_test_event_to_view(
+    view: &TestView,
+    event: TestEvent,
+) -> Result<ProcessResult<TestView>, ProjectionError> {
+    let result = match &event {
         TestEvent::Started(label) => {
+            let mut view_started = TestView::default();
             debug!("DMR: VIEW: updating label: {label}");
-            view.label = label.to_string();
-            view.count += 1;
-            view.events.push(event.clone());
-            true
+            view_started.label = label.to_string();
+            view_started.count += 1;
+            view_started.events.push(event.clone());
+            ProcessResult::Changed(view_started)
         }
 
         TestEvent::Tested(value) => {
             let old_sum = view.sum;
-            view.count += 1;
-            view.sum += value;
-            view.events.push(event.clone());
+
+            let mut view_tested = view.clone();
+            view_tested.count += 1;
+            view_tested.sum += value;
+            view_tested.events.push(event.clone());
             debug!(
                 "DMR: VIEW: updating sum: {old_sum} + {value} = {new_sum}",
-                new_sum = view.sum
+                new_sum = view_tested.sum
             );
-            true
+            ProcessResult::Changed(view_tested)
         }
 
         TestEvent::Stopped => {
             debug!("DMR: VIEW: stopped event -- no view update");
-            false
+            ProcessResult::Unchanged
         }
     };
 
     debug!(
-        new_view=?view,
+        ?result,
         "DMR: VIEW: view {} updated.",
-        if is_updated { "was" } else { "was not" }
+        if result.is_changed() {
+            "was"
+        } else {
+            "was not"
+        }
     );
 
-    (view, is_updated)
+    Ok(result)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, JsonMessage, Serialize, Deserialize)]

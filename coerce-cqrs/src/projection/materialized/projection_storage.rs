@@ -1,12 +1,13 @@
 use crate::projection::{Offset, PersistenceId, ProjectionError};
 use std::collections::HashMap;
+use std::fmt::Debug;
 
 pub type AggregateOffsets = HashMap<PersistenceId, Offset>;
 
 #[async_trait]
 pub trait ProjectionStorage {
     type ViewId;
-    type Projection: Default;
+    type Projection: Default + Debug + Clone;
 
     fn name(&self) -> &str;
 

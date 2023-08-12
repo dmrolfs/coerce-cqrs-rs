@@ -75,9 +75,10 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     // let offset_storage =
     //     Arc::new(PostgresOffsetStorage::new("projection_offset", &storage_config, &system).await?);
 
-    let processor = Processor::builder_for::<TestAggregate, _, _>(projection_name.clone())
+    let processor = Processor::builder_for::<TestAggregate, _, _, _>(projection_name.clone())
         .with_entry_handler(view_apply)
         .with_source(storage.clone())
+        .with_projection_source(view_storage.clone())
         // .with_offset_storage(offset_storage.clone())
         .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(50)));
 
