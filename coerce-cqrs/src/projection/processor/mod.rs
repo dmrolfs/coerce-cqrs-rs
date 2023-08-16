@@ -8,8 +8,7 @@ pub use interval::{
 pub use processor::{
     protocol::{ProcessorApi, ProcessorCommand},
     AggregateEntries, AggregateOffsets, AggregateSequences, Processor, ProcessorContext,
-    ProcessorEngine, ProcessorLifecycle, ProcessorSource, ProcessorSourceProvider,
-    ProcessorSourceRef,
+    ProcessorEngine, ProcessorError, ProcessorSource, ProcessorSourceProvider, ProcessorSourceRef,
 };
 
 use crate::projection::ProjectionError;
