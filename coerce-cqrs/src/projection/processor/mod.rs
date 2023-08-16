@@ -7,8 +7,9 @@ pub use interval::{
 };
 pub use processor::{
     protocol::{ProcessorApi, ProcessorCommand},
-    AggregateEntries, AggregateOffsets, AggregateSequences, Processor, ProcessorContext,
-    ProcessorEngine, ProcessorError, ProcessorSource, ProcessorSourceProvider, ProcessorSourceRef,
+    AggregateEntries, AggregateOffsets, AggregateSequences, Building, Processor, ProcessorContext,
+    ProcessorEngine, ProcessorError, ProcessorLifecycle, ProcessorSource, ProcessorSourceProvider,
+    ProcessorSourceRef, Ready, Running,
 };
 
 use crate::projection::ProjectionError;
