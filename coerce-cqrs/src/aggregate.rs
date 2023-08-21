@@ -6,6 +6,43 @@ use std::error::Error;
 use std::fmt::{Debug, Display};
 use thiserror::Error;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SnapshotTrigger {
+    None,
+    OnEventCount {
+        nr_events: u64,
+        after_nr_events: u64,
+    },
+}
+
+impl SnapshotTrigger {
+    pub const fn none() -> Self {
+        Self::None
+    }
+
+    pub const fn on_event_count(after_nr_events: u64) -> Self {
+        Self::OnEventCount {
+            nr_events: 0,
+            after_nr_events,
+        }
+    }
+
+    /// Increments the event count for the snapshot trigger and returns true
+    /// if a snapshot should be taken.
+    pub fn incr(&mut self) -> bool {
+        match self {
+            Self::None => false,
+            Self::OnEventCount {
+                ref mut nr_events,
+                after_nr_events,
+            } => {
+                *nr_events += 1;
+                *nr_events % *after_nr_events == 0
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub enum CommandResult<T>
@@ -77,14 +114,36 @@ pub enum AggregateError {
 mod tests {
     use crate::postgres::PostgresStorageConfig;
     use crate::projection::{processor::ProcessorSourceProvider, PersistenceId};
+    use crate::SnapshotTrigger;
     use claim::{assert_ok, assert_some};
     use coerce::actor::system::ActorSystem;
     use coerce::actor::IntoActor;
     use coerce::persistent::Persistence;
     use coerce_cqrs_test::fixtures::actor::{Msg, TestActor};
     use once_cell::sync::Lazy;
+    use pretty_assertions::assert_eq;
     use std::time::Duration;
     use tagid::Entity;
+
+    #[test]
+    pub fn test_snapshot_trigger_none() {
+        let mut trigger = SnapshotTrigger::none();
+        for _ in 0..10 {
+            assert_eq!(trigger.incr(), false);
+        }
+    }
+
+    #[test]
+    pub fn test_snapshot_trigger_on_event_count() {
+        Lazy::force(&coerce_cqrs_test::setup_tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("aggregate::test_snapshot_trigger_on_event_count");
+        let _main_span_guard = main_span.enter();
+
+        let mut trigger = SnapshotTrigger::on_event_count(3);
+        for i in 1..=10 {
+            assert_eq!(trigger.incr(), i % 3 == 0);
+        }
+    }
 
     #[test]
     pub fn test_aggregate_recovery() {
