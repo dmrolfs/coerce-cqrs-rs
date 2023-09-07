@@ -1,5 +1,5 @@
 use crate::projection::processor::{ProcessEntry, ProcessResult, ProcessorContext};
-use crate::projection::ProjectionError;
+use crate::projection::{PersistenceId, ProjectionError};
 use coerce::actor::message::Message;
 use coerce::persistent::storage::JournalEntry;
 use std::fmt::{self, Debug};
@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 pub struct ProjectionApplicator<P, E, A>
 where
     E: Message,
-    A: Fn(&P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
+    A: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
 {
     applicator: A,
     _marker: PhantomData<fn() -> (P, E)>,
@@ -17,7 +17,7 @@ where
 impl<P, E, A> Debug for ProjectionApplicator<P, E, A>
 where
     E: Message,
-    A: Fn(&P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
+    A: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProjectionApplicator").finish()
@@ -27,7 +27,7 @@ where
 impl<P, E, A> ProjectionApplicator<P, E, A>
 where
     E: Message,
-    A: Fn(&P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
+    A: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
 {
     pub fn new(applicator: A) -> Self {
         Self {
@@ -42,13 +42,14 @@ impl<P, E, A> ProcessEntry for ProjectionApplicator<P, E, A>
 where
     P: Debug,
     E: Message,
-    A: Fn(&P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
+    A: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
 {
     type Projection = P;
 
     #[instrument(level = "debug", skip(self, entry, _ctx))]
     fn apply_entry_to_projection(
         &self,
+        persistence_id: &PersistenceId,
         projection: &Self::Projection,
         entry: JournalEntry,
         _ctx: &ProcessorContext,
@@ -58,6 +59,6 @@ where
             Err(error) => return ProcessResult::Err(error.into()),
         };
 
-        (self.applicator)(projection, event)
+        (self.applicator)(persistence_id, projection, event)
     }
 }

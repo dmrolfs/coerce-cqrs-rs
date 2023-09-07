@@ -472,12 +472,7 @@ where
                 debug!("DMR: FOUND {} AGGREGATES...", latest.len());
                 for (persistence_id, entries) in latest {
                     let outcome = self
-                        .do_process_aggregate_entries(
-                            &persistence_id,
-                            entries,
-                            // handler.as_ref(),
-                            &context,
-                        )
+                        .do_process_aggregate_entries(&persistence_id, entries, &context)
                         .await;
                     if let Err(err) = outcome {
                         debug!("DMR: failed to process entries: {err:?}");
@@ -549,10 +544,12 @@ where
         for entry in entries {
             let offset_sequence = entry.sequence;
 
-            let projection_result =
-                self.inner
-                    .entry_handler
-                    .apply_entry_to_projection(&projection, entry, ctx);
+            let projection_result = self.inner.entry_handler.apply_entry_to_projection(
+                persistence_id,
+                &projection,
+                entry,
+                ctx,
+            );
 
             match projection_result {
                 ProcessResult::Changed(updated_projection) => {

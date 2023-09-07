@@ -4,7 +4,7 @@ use coerce::actor::ActorRefErr;
 use coerce::persistent::types::JournalTypes;
 use coerce::persistent::{PersistentActor, Recover, RecoverSnapshot};
 use coerce_cqrs::projection::processor::ProcessResult;
-use coerce_cqrs::projection::ProjectionError;
+use coerce_cqrs::projection::{PersistenceId, ProjectionError};
 use coerce_cqrs::{AggregateError, AggregateState, ApplyAggregateEvent, CommandResult};
 use std::fmt;
 use std::marker::PhantomData;
@@ -32,6 +32,7 @@ impl Default for TestView {
 #[allow(dead_code, clippy::missing_const_for_fn)]
 #[instrument(level = "debug")]
 pub fn apply_test_event_to_view(
+    _persistence_id: &PersistenceId,
     view: &TestView,
     event: TestEvent,
 ) -> ProcessResult<TestView, ProjectionError> {
