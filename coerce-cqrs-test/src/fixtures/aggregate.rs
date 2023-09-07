@@ -34,7 +34,7 @@ impl Default for TestView {
 pub fn apply_test_event_to_view(
     view: &TestView,
     event: TestEvent,
-) -> Result<ProcessResult<TestView>, ProjectionError> {
+) -> ProcessResult<TestView, ProjectionError> {
     let result = match &event {
         TestEvent::Started(label) => {
             let mut view_started = TestView::default();
@@ -75,7 +75,7 @@ pub fn apply_test_event_to_view(
         }
     );
 
-    Ok(result)
+    result
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, JsonMessage, Serialize, Deserialize)]

@@ -555,7 +555,7 @@ where
                     .apply_entry_to_projection(&projection, entry, ctx);
 
             match projection_result {
-                Ok(ProcessResult::Changed(updated_projection)) => {
+                ProcessResult::Changed(updated_projection) => {
                     info!(
                         ?updated_projection, old_projection=?projection,
                         "DMR: projection CHANGED by event entry"
@@ -564,18 +564,18 @@ where
                     any_update = true;
                 }
 
-                Ok(ProcessResult::Unchanged) => {
+                ProcessResult::Unchanged => {
                     debug!(?projection, "No change to projection for event entry.");
                 }
 
-                Err(ProjectionError::EventApplication(error)) => {
+                ProcessResult::Err(ProjectionError::EventApplication(error)) => {
                     warn!(
                         ?projection,
                         "failed to apply entry to projection - skipping entry: {error:?}"
                     );
                 }
 
-                Err(error) => return Err(error),
+                ProcessResult::Err(error) => return Err(error),
             }
 
             last_offset = Some(Offset::new(offset_sequence));
