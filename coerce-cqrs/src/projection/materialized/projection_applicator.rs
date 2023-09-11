@@ -46,19 +46,18 @@ where
 {
     type Projection = P;
 
-    #[instrument(level = "debug", skip(self, entry, _ctx))]
+    #[instrument(level = "debug", skip(self, entry, ctx))]
     fn apply_entry_to_projection(
         &self,
-        persistence_id: &PersistenceId,
         projection: &Self::Projection,
         entry: JournalEntry,
-        _ctx: &ProcessorContext,
+        ctx: &ProcessorContext,
     ) -> ProcessResult<Self::Projection, ProjectionError> {
         let event = match Self::from_bytes(entry) {
             Ok(evt) => evt,
             Err(error) => return ProcessResult::Err(error.into()),
         };
 
-        (self.applicator)(persistence_id, projection, event)
+        (self.applicator)(ctx.persistence_id(), projection, event)
     }
 }

@@ -2,6 +2,7 @@ use crate::projection::processor::interval::CalculateInterval;
 use crate::projection::processor::processor::protocol::ProcessorApi;
 use crate::projection::processor::{ProcessEntry, ProcessResult};
 use crate::projection::{Offset, PersistenceId, ProjectionError, ProjectionStorage};
+use coerce::actor::system::ActorSystem;
 use coerce::persistent::journal::storage::JournalEntry;
 use coerce::persistent::storage::JournalStorage;
 use coerce::persistent::PersistentActor;
@@ -116,6 +117,7 @@ where
 {
     projection_name: String,
     entry_handler: Option<Arc<H>>,
+    system: Option<ActorSystem>,
     source: Option<ProcessorSourceRef>,
     projection_source: Option<Arc<S>>,
     interval_calculator: Option<I>,
@@ -131,6 +133,7 @@ where
         f.debug_struct("Building")
             .field("projection_name", &self.projection_name)
             .field("entry_handler", &self.entry_handler)
+            .field("system", &self.system.as_ref().map(|s| s.system_id()))
             .field("interval_calculator", &self.interval_calculator)
             .finish()
     }
@@ -155,6 +158,7 @@ where
             inner: Building {
                 projection_name: projection_name.into(),
                 entry_handler: None,
+                system: None,
                 source: None,
                 projection_source: None,
                 interval_calculator: None,
@@ -167,6 +171,16 @@ where
         Self {
             inner: Building {
                 entry_handler: Some(Arc::new(entry_handler)),
+                ..self.inner
+            },
+        }
+    }
+
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn with_system(self, system: ActorSystem) -> Self {
+        Self {
+            inner: Building {
+                system: Some(system),
                 ..self.inner
             },
         }
@@ -210,6 +224,11 @@ where
             .entry_handler
             .ok_or_else(|| ProcessorError::UninitializedField("entry_handler".to_string()))?;
 
+        let system = self
+            .inner
+            .system
+            .ok_or_else(|| ProcessorError::UninitializedField("system".to_string()))?;
+
         let source = self
             .inner
             .source
@@ -229,6 +248,7 @@ where
             inner: Ready {
                 projection_name: self.inner.projection_name,
                 entry_handler,
+                system,
                 source,
                 projection_storage,
                 interval_calculator,
@@ -247,6 +267,7 @@ where
 {
     projection_name: String,
     entry_handler: Arc<H>,
+    system: ActorSystem,
     source: ProcessorSourceRef,
     projection_storage: Arc<S>,
     interval_calculator: I,
@@ -277,20 +298,61 @@ where
 {
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct ProcessorContext {
     pub projection_name: String,
+    persistence_id: Option<PersistenceId>,
     nr_repeat_empties: u32,
     nr_repeat_failures: u32,
+    system: ActorSystem,
 }
 
 impl ProcessorContext {
-    pub fn new(projection_name: &str) -> Self {
+    pub fn new(projection_name: &str, system: ActorSystem) -> Self {
         Self {
             projection_name: projection_name.to_string(),
+            persistence_id: None,
             nr_repeat_empties: 0,
             nr_repeat_failures: 0,
+            system,
         }
+    }
+
+    fn set_aggregate(&mut self, persistence_id: PersistenceId) {
+        self.persistence_id = Some(persistence_id);
+    }
+
+    pub const fn persistence_id(&self) -> &PersistenceId {
+        match self.persistence_id.as_ref() {
+            Some(pid) => pid,
+            None => panic!("called outside of aggregate context"),
+        }
+    }
+
+    fn clear_aggregate(&mut self) {
+        self.persistence_id = None;
+        self.nr_repeat_empties = 0;
+    }
+}
+
+impl Debug for ProcessorContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProcessorContext")
+            .field("projection_name", &self.projection_name)
+            .field("persistence_id", &self.persistence_id)
+            .field("nr_repeat_empties", &self.nr_repeat_empties)
+            .field("nr_repeat_failures", &self.nr_repeat_failures)
+            .finish()
+    }
+}
+
+impl PartialEq for ProcessorContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.projection_name == other.projection_name
+            && self.persistence_id == other.persistence_id
+            && self.nr_repeat_empties == other.nr_repeat_empties
+            && self.nr_repeat_failures == other.nr_repeat_failures
+            && self.system.system_id() == other.system.system_id()
     }
 }
 
@@ -313,7 +375,7 @@ where
         let projection_name = self.inner.projection_name.clone();
 
         let handle = tokio::spawn(async move {
-            let mut context = ProcessorContext::new(&projection_name);
+            let mut context = ProcessorContext::new(&projection_name, self.inner.system.clone());
 
             let source = self.inner.source.clone();
             let projection_storage = self.inner.projection_storage.clone();
@@ -471,16 +533,16 @@ where
             Some(latest) => {
                 debug!("DMR: FOUND {} AGGREGATES...", latest.len());
                 for (persistence_id, entries) in latest {
-                    let outcome = self
-                        .do_process_aggregate_entries(&persistence_id, entries, &context)
-                        .await;
+                    context.set_aggregate(persistence_id);
+                    let outcome = self.do_process_aggregate_entries(entries, &context).await;
                     if let Err(err) = outcome {
-                        debug!("DMR: failed to process entries: {err:?}");
+                        debug!(error=?err, "DMR: failed to process entries at: {:?}", context.persistence_id);
                         context.nr_repeat_failures += 1;
                         error = Some(err);
                     }
                 }
 
+                context.clear_aggregate();
                 context.nr_repeat_empties = 0;
             }
         };
@@ -519,7 +581,6 @@ where
     #[instrument(level = "debug", skip(self))]
     async fn do_process_aggregate_entries(
         &mut self,
-        persistence_id: &PersistenceId,
         entries: Vec<JournalEntry>,
         ctx: &ProcessorContext,
     ) -> Result<(), ProjectionError> {
@@ -530,13 +591,14 @@ where
         let mut projection = self
             .inner
             .projection_storage
-            .load_projection(persistence_id)
+            .load_projection(ctx.persistence_id())
             .await?
             .unwrap_or_default();
         debug!(
             ?projection,
-            "DMR: # LATEST pulled: {persistence_id} => {}",
-            entries.len()
+            "DMR: # LATEST pulled: {persistence_id} => {nr_entries}",
+            persistence_id = ctx.persistence_id(),
+            nr_entries = entries.len(),
         );
 
         let mut any_update = false;
@@ -544,12 +606,10 @@ where
         for entry in entries {
             let offset_sequence = entry.sequence;
 
-            let projection_result = self.inner.entry_handler.apply_entry_to_projection(
-                persistence_id,
-                &projection,
-                entry,
-                ctx,
-            );
+            let projection_result =
+                self.inner
+                    .entry_handler
+                    .apply_entry_to_projection(&projection, entry, ctx);
 
             match projection_result {
                 ProcessResult::Changed(updated_projection) => {
@@ -581,11 +641,11 @@ where
 
         let updated_projection = if any_update { Some(projection) } else { None };
 
-        debug!(?last_offset, "DMR: applied to projection pulled entries for {persistence_id} => {updated_projection:?}");
+        debug!(?last_offset, "DMR: applied to projection pulled entries for {persistence_id} => {updated_projection:?}", persistence_id=ctx.persistence_id());
 
         self.inner
             .projection_storage
-            .save_projection(persistence_id, updated_projection, last_offset)
+            .save_projection(ctx.persistence_id(), updated_projection, last_offset)
             .await?;
         Ok(())
     }

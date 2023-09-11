@@ -73,6 +73,7 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
 
     let processor = Processor::builder_for::<TestAggregate, _, _, _>(projection_name.clone())
         .with_entry_handler(view_apply)
+        .with_system(system.clone())
         .with_source(storage.clone())
         .with_projection_source(view_storage.clone())
         .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(50)));

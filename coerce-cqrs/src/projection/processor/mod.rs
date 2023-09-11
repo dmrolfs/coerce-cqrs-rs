@@ -12,7 +12,7 @@ pub use processor::{
     ProcessorSourceRef, Ready, Running,
 };
 
-use crate::projection::{PersistenceId, ProjectionError};
+use crate::projection::ProjectionError;
 use coerce::actor::message::{Message, MessageUnwrapErr};
 use coerce::persistent::journal::storage::JournalEntry;
 use std::fmt::Debug;
@@ -161,7 +161,6 @@ pub trait ProcessEntry {
 
     fn apply_entry_to_projection(
         &self,
-        persistence_id: &PersistenceId,
         projection: &Self::Projection,
         entry: JournalEntry,
         ctx: &ProcessorContext,
