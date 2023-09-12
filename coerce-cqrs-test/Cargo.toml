@@ -17,9 +17,9 @@ coerce-cqrs = { path = "../coerce-cqrs" }
 coerce = { version = "0.8.10", features = ["full",] }
 coerce-macros = "0.2.0"
 
-anyhow = "1.0.72"
-async-trait = "0.1.72"
-dashmap = "5.5.0"
+anyhow = "1.0.75"
+async-trait = "0.1.73"
+dashmap = "5.5.3"
 #delegate = "0.9.0"
 futures = "0.3.28"
 iso8601-timestamp = "0.2.11"
@@ -35,22 +35,22 @@ pretty-type-name = "1.0.1"
 pretty_assertions = "1.4.0"
 rand = "0.8.5"
 secrecy = { version = "0.8.0", features = ["serde"] }
-serde = { version = "1.0.181", features = ["derive", "rc"] }
-serde_json = "1.0.104"
+serde = { version = "1.0.188", features = ["derive", "rc"] }
+serde_json = "1.0.106"
 #sha2 = "0.10.6"
 smol_str = { version = "0.2.0", features = ["serde"] }
 sql_query_builder = { version = "1.1.4", features = ["postgresql"] }
 sqlx = { version = "0.7.1", features = ["postgres", "runtime-tokio-rustls"] }
 strum = "0.25.0"
-strum_macros = "0.25.1"
+strum_macros = "0.25.2"
 tagid = { git = "https://github.com/dmrolfs/tagid-rs", features = ["envelope"] }
-thiserror = "1.0.44"
-tokio = { version = "1.29.1", features = ["full"] }
+thiserror = "1.0.48"
+tokio = { version = "1.32.0", features = ["full"] }
 tokio-stream = "0.1.14"
 tokio-util = { version = "0.7.8", features = ["full"] }
 tracing = { version = "0.1.37", features = ["valuable"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "json"] }
-tracing-bunyan-formatter = "0.3.8"
+tracing-bunyan-formatter = "0.3.9"
 tracing-log = "0.1.3"
 uuid = { version = "1.4.1", features = ["serde", "v4"] }
 valuable = { version = "0.1.0", features = ["derive"] }
@@ -63,4 +63,4 @@ valuable = { version = "0.1.0", features = ["derive"] }
 claim = { git = "https://github.com/dmrolfs/rust-claim", branch = "bump-autocfg-version" }
 serde_test = "1.0.176"
 static_assertions = "1.1.0"
-tokio-test = "0.4.2"
+tokio-test = "0.4.3"

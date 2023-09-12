@@ -41,7 +41,7 @@ impl Handler<MyCommand> for MyAggregate {
         command: MyCommand,
         ctx: &mut ActorContext,
     ) -> CommandResult<usize, String> {
-        let events = match self.handle_command(command, ctx) {
+        let events = match self.handle_command(&command) {
             CommandResult::Ok(evts) => evts,
             CommandResult::Rejected(msg) => return CommandResult::Rejected(msg),
             CommandResult::Err(()) => {
@@ -56,10 +56,12 @@ impl Handler<MyCommand> for MyAggregate {
         }
 
         events.into_iter().for_each(|event| {
-            if let Some(new_agg) = self.apply_event(event, ctx) {
+            if let Some(new_agg) = self.apply_event(event) {
                 *self = new_agg;
             }
         });
+
+        self.then_run(&command, ctx);
 
         CommandResult::Ok(self.count)
     }
@@ -69,11 +71,7 @@ impl AggregateState<MyCommand, MyEvent> for MyAggregate {
     type Error = ();
     type State = Self;
 
-    fn handle_command(
-        &self,
-        command: MyCommand,
-        _ctx: &mut ActorContext,
-    ) -> CommandResult<Vec<MyEvent>, Self::Error> {
+    fn handle_command(&self, command: &MyCommand) -> CommandResult<Vec<MyEvent>, Self::Error> {
         use MyCommand as C;
 
         match command {
@@ -82,7 +80,7 @@ impl AggregateState<MyCommand, MyEvent> for MyAggregate {
         }
     }
 
-    fn apply_event(&mut self, event: MyEvent, _ctx: &mut ActorContext) -> Option<Self::State> {
+    fn apply_event(&mut self, event: MyEvent) -> Option<Self::State> {
         match event {
             MyEvent::SomethingWasDone => {
                 self.count += 1;
@@ -92,24 +90,11 @@ impl AggregateState<MyCommand, MyEvent> for MyAggregate {
         None
     }
 }
-// impl ApplyAggregateEvent<MyEvent> for MyAggregate {
-//     type BaseType = Self;
-//
-//     fn apply_event(&mut self, event: MyEvent, _ctx: &mut ActorContext) -> Option<Self::BaseType> {
-//         match event {
-//             MyEvent::SomethingWasDone => {
-//                 self.count += 1;
-//             }
-//         }
-//
-//         None
-//     }
-// }
 
 #[async_trait]
 impl Recover<MyEvent> for MyAggregate {
-    async fn recover(&mut self, event: MyEvent, ctx: &mut ActorContext) {
-        if let Some(new_agg) = self.apply_event(event, ctx) {
+    async fn recover(&mut self, event: MyEvent, _ctx: &mut ActorContext) {
+        if let Some(new_agg) = self.apply_event(event) {
             *self = new_agg;
         }
     }

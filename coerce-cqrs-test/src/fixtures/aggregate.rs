@@ -215,7 +215,7 @@ impl Handler<TestCommand> for TestAggregate {
         command: TestCommand,
         ctx: &mut ActorContext,
     ) -> CommandResult<String, CommandFailure> {
-        let events = match self.state.handle_command(command, ctx) {
+        let events = match self.state.handle_command(&command) {
             CommandResult::Ok(events) => events,
             CommandResult::Rejected(msg) => return CommandResult::Rejected(msg),
             CommandResult::Err(err) => return CommandResult::Err(err.into()),
@@ -230,7 +230,7 @@ impl Handler<TestCommand> for TestAggregate {
             }
 
             debug!("[{}] APPLYING event: {event:?}", ctx.id());
-            if let Some(new_state) = self.state.apply_event(event, ctx) {
+            if let Some(new_state) = self.state.apply_event(event) {
                 self.state = new_state;
             }
 
@@ -259,6 +259,7 @@ impl Handler<TestCommand> for TestAggregate {
         }
 
         // perform 0.. side effect tasks
+        self.state.then_run(&command, ctx);
 
         // determine result corresponding to command handling
         CommandResult::ok(self.to_string())
@@ -291,23 +292,12 @@ impl Handler<ProvokeError> for TestAggregate {
     }
 }
 
-// impl ApplyAggregateEvent<TestEvent> for TestAggregate {
-//     type BaseType = Self;
-//
-//     fn apply_event(&mut self, event: TestEvent, ctx: &mut ActorContext) -> Option<Self::BaseType> {
-//         if let Some(new_state) = self.state.apply_event(event, ctx) {
-//             self.state = new_state;
-//         }
-//         None
-//     }
-// }
-
 #[async_trait]
 impl Recover<TestEvent> for TestAggregate {
     #[instrument(level = "debug", skip(ctx))]
     async fn recover(&mut self, event: TestEvent, ctx: &mut ActorContext) {
         info!("[{}] RECOVERING from EVENT: {event:?}", ctx.id());
-        if let Some(new_type) = self.state.apply_event(event, ctx) {
+        if let Some(new_type) = self.state.apply_event(event) {
             self.state = new_type;
             // leaving events at zero to snapshot after *new* events :-)
         }
@@ -362,23 +352,19 @@ impl AggregateState<TestCommand, TestEvent> for TestState {
     type Error = AggregateError;
     type State = Self;
 
-    fn handle_command(
-        &self,
-        command: TestCommand,
-        ctx: &mut ActorContext,
-    ) -> CommandResult<Vec<TestEvent>, Self::Error> {
+    fn handle_command(&self, command: &TestCommand) -> CommandResult<Vec<TestEvent>, Self::Error> {
         match self {
-            Self::Quiescent(state) => state.handle_command(command, ctx),
-            Self::Active(state) => state.handle_command(command, ctx),
-            Self::Completed(state) => state.handle_command(command, ctx),
+            Self::Quiescent(state) => state.handle_command(command),
+            Self::Active(state) => state.handle_command(command),
+            Self::Completed(state) => state.handle_command(command),
         }
     }
 
-    fn apply_event(&mut self, event: TestEvent, ctx: &mut ActorContext) -> Option<Self::State> {
+    fn apply_event(&mut self, event: TestEvent) -> Option<Self::State> {
         match self {
-            Self::Quiescent(state) => state.apply_event(event, ctx),
-            Self::Active(state) => state.apply_event(event, ctx),
-            Self::Completed(state) => state.apply_event(event, ctx),
+            Self::Quiescent(state) => state.apply_event(event),
+            Self::Active(state) => state.apply_event(event),
+            Self::Completed(state) => state.apply_event(event),
         }
     }
 }
@@ -396,15 +382,11 @@ impl AggregateState<TestCommand, TestEvent> for QuiescentState {
     type Error = AggregateError;
     type State = TestState;
 
-    #[instrument(level = "debug", skip(_ctx))]
-    fn handle_command(
-        &self,
-        command: TestCommand,
-        _ctx: &mut ActorContext,
-    ) -> CommandResult<Vec<TestEvent>, Self::Error> {
+    #[instrument(level = "debug")]
+    fn handle_command(&self, command: &TestCommand) -> CommandResult<Vec<TestEvent>, Self::Error> {
         match command {
             TestCommand::Start(description) => {
-                CommandResult::Ok(vec![TestEvent::Started(description)])
+                CommandResult::Ok(vec![TestEvent::Started(description.clone())])
             }
             cmd => CommandResult::Rejected(format!(
                 "TestAggregate must be started before handling command: {cmd:?}"
@@ -412,8 +394,8 @@ impl AggregateState<TestCommand, TestEvent> for QuiescentState {
         }
     }
 
-    #[instrument(level = "debug", skip(_ctx))]
-    fn apply_event(&mut self, event: TestEvent, _ctx: &mut ActorContext) -> Option<Self::State> {
+    #[instrument(level = "debug")]
+    fn apply_event(&mut self, event: TestEvent) -> Option<Self::State> {
         match event {
             TestEvent::Started(description) => {
                 Some(TestState::Active(ActiveState::new(description)))
@@ -445,13 +427,9 @@ impl AggregateState<TestCommand, TestEvent> for ActiveState {
     type Error = AggregateError;
     type State = TestState;
 
-    fn handle_command(
-        &self,
-        command: TestCommand,
-        _ctx: &mut ActorContext,
-    ) -> CommandResult<Vec<TestEvent>, Self::Error> {
+    fn handle_command(&self, command: &TestCommand) -> CommandResult<Vec<TestEvent>, Self::Error> {
         match command {
-            TestCommand::Test(value) => CommandResult::Ok(vec![TestEvent::Tested(value)]),
+            TestCommand::Test(value) => CommandResult::Ok(vec![TestEvent::Tested(*value)]),
             TestCommand::Stop => CommandResult::Ok(vec![TestEvent::Stopped]),
             TestCommand::Start(_) => {
                 CommandResult::Rejected("Active TestAggregate cannot be restarted.".to_string())
@@ -459,8 +437,8 @@ impl AggregateState<TestCommand, TestEvent> for ActiveState {
         }
     }
 
-    #[instrument(level = "debug", skip(_ctx))]
-    fn apply_event(&mut self, event: TestEvent, _ctx: &mut ActorContext) -> Option<Self::State> {
+    #[instrument(level = "debug")]
+    fn apply_event(&mut self, event: TestEvent) -> Option<Self::State> {
         match event {
             TestEvent::Tested(value) => {
                 self.tests.push(value);
@@ -494,19 +472,15 @@ impl AggregateState<TestCommand, TestEvent> for CompletedState {
     type Error = AggregateError;
     type State = TestState;
 
-    #[instrument(level = "debug", skip(_ctx))]
-    fn handle_command(
-        &self,
-        command: TestCommand,
-        _ctx: &mut ActorContext,
-    ) -> CommandResult<Vec<TestEvent>, Self::Error> {
+    #[instrument(level = "debug")]
+    fn handle_command(&self, command: &TestCommand) -> CommandResult<Vec<TestEvent>, Self::Error> {
         CommandResult::Rejected(format!(
             "Completed TestAggregate does not accept further comments: {command:?}"
         ))
     }
 
-    #[instrument(level = "debug", skip(_ctx))]
-    fn apply_event(&mut self, event: TestEvent, _ctx: &mut ActorContext) -> Option<Self::State> {
+    #[instrument(level = "debug")]
+    fn apply_event(&mut self, event: TestEvent) -> Option<Self::State> {
         warn!(
             ?event,
             "completed TestAggregate does not recognize further events - ignored"
