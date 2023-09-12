@@ -2,10 +2,10 @@ use coerce::actor::context::ActorContext;
 use coerce::actor::message::{Handler, Message};
 use coerce::actor::ActorRefErr;
 use coerce::persistent::types::JournalTypes;
-use coerce::persistent::{PersistentActor, Recover, RecoverSnapshot};
+use coerce::persistent::{PersistErr, PersistentActor, Recover, RecoverSnapshot};
 use coerce_cqrs::projection::processor::ProcessResult;
 use coerce_cqrs::projection::{PersistenceId, ProjectionError};
-use coerce_cqrs::{AggregateError, AggregateState, ApplyAggregateEvent, CommandResult};
+use coerce_cqrs::{AggregateError, AggregateState, CommandResult};
 use std::fmt;
 use std::marker::PhantomData;
 use tagid::{CuidGenerator, Entity, Label};
@@ -80,11 +80,32 @@ pub fn apply_test_event_to_view(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, JsonMessage, Serialize, Deserialize)]
-#[result("CommandResult<String>")]
+#[result("CommandResult<String, CommandFailure>")]
 pub enum TestCommand {
     Start(String),
     Test(i32),
     Stop,
+}
+
+use strum_macros::Display;
+
+#[derive(Debug, PartialEq, Eq, Display, Serialize, Deserialize)]
+pub enum CommandFailure {
+    EventPersist,
+}
+
+impl From<AggregateError> for CommandFailure {
+    fn from(error: AggregateError) -> Self {
+        match error {
+            AggregateError::Persist(err) => err.into(),
+        }
+    }
+}
+
+impl From<PersistErr> for CommandFailure {
+    fn from(_error: PersistErr) -> Self {
+        Self::EventPersist
+    }
 }
 
 pub trait Summarizable {
@@ -193,11 +214,11 @@ impl Handler<TestCommand> for TestAggregate {
         &mut self,
         command: TestCommand,
         ctx: &mut ActorContext,
-    ) -> CommandResult<String> {
+    ) -> CommandResult<String, CommandFailure> {
         let events = match self.state.handle_command(command, ctx) {
-            Ok(events) => events,
-            Err(AggregateError::RejectedCommand(msg)) => return CommandResult::Rejected(msg),
-            Err(err) => return err.into(),
+            CommandResult::Ok(events) => events,
+            CommandResult::Rejected(msg) => return CommandResult::Rejected(msg),
+            CommandResult::Err(err) => return CommandResult::Err(err.into()),
         };
 
         debug!("[{}] RESULTING EVENTS: {events:?}", ctx.id());
@@ -205,7 +226,7 @@ impl Handler<TestCommand> for TestAggregate {
             debug!("[{}] PERSISTING event: {event:?}", ctx.id());
             if let Err(error) = self.persist(&event, ctx).await {
                 error!(?event, "[{}] failed to persist event: {error:?}", ctx.id());
-                return error.into();
+                return CommandResult::Err(error.into());
             }
 
             debug!("[{}] APPLYING event: {event:?}", ctx.id());
@@ -231,7 +252,7 @@ impl Handler<TestCommand> for TestAggregate {
                             "[{}] failed to snapshot event at sequence: {}",
                             ctx.id(), self.nr_events
                         );
-                        return error.into();
+                        return CommandResult::Err(error.into());
                     }
                 }
             }
@@ -270,24 +291,25 @@ impl Handler<ProvokeError> for TestAggregate {
     }
 }
 
-impl ApplyAggregateEvent<TestEvent> for TestAggregate {
-    type BaseType = Self;
-
-    fn apply_event(&mut self, event: TestEvent, ctx: &mut ActorContext) -> Option<Self::BaseType> {
-        if let Some(new_state) = self.state.apply_event(event, ctx) {
-            self.state = new_state;
-        }
-        None
-    }
-}
+// impl ApplyAggregateEvent<TestEvent> for TestAggregate {
+//     type BaseType = Self;
+//
+//     fn apply_event(&mut self, event: TestEvent, ctx: &mut ActorContext) -> Option<Self::BaseType> {
+//         if let Some(new_state) = self.state.apply_event(event, ctx) {
+//             self.state = new_state;
+//         }
+//         None
+//     }
+// }
 
 #[async_trait]
 impl Recover<TestEvent> for TestAggregate {
     #[instrument(level = "debug", skip(ctx))]
     async fn recover(&mut self, event: TestEvent, ctx: &mut ActorContext) {
         info!("[{}] RECOVERING from EVENT: {event:?}", ctx.id());
-        if let Some(new_type) = self.apply_event(event, ctx) {
-            *self = new_type;
+        if let Some(new_type) = self.state.apply_event(event, ctx) {
+            self.state = new_type;
+            // leaving events at zero to snapshot after *new* events :-)
         }
     }
 }
@@ -344,7 +366,7 @@ impl AggregateState<TestCommand, TestEvent> for TestState {
         &self,
         command: TestCommand,
         ctx: &mut ActorContext,
-    ) -> Result<Vec<TestEvent>, Self::Error> {
+    ) -> CommandResult<Vec<TestEvent>, Self::Error> {
         match self {
             Self::Quiescent(state) => state.handle_command(command, ctx),
             Self::Active(state) => state.handle_command(command, ctx),
@@ -379,12 +401,14 @@ impl AggregateState<TestCommand, TestEvent> for QuiescentState {
         &self,
         command: TestCommand,
         _ctx: &mut ActorContext,
-    ) -> Result<Vec<TestEvent>, Self::Error> {
+    ) -> CommandResult<Vec<TestEvent>, Self::Error> {
         match command {
-            TestCommand::Start(description) => Ok(vec![TestEvent::Started(description)]),
-            cmd => Err(AggregateError::RejectedCommand(format!(
+            TestCommand::Start(description) => {
+                CommandResult::Ok(vec![TestEvent::Started(description)])
+            }
+            cmd => CommandResult::Rejected(format!(
                 "TestAggregate must be started before handling command: {cmd:?}"
-            ))),
+            )),
         }
     }
 
@@ -425,13 +449,13 @@ impl AggregateState<TestCommand, TestEvent> for ActiveState {
         &self,
         command: TestCommand,
         _ctx: &mut ActorContext,
-    ) -> Result<Vec<TestEvent>, Self::Error> {
+    ) -> CommandResult<Vec<TestEvent>, Self::Error> {
         match command {
-            TestCommand::Test(value) => Ok(vec![TestEvent::Tested(value)]),
-            TestCommand::Stop => Ok(vec![TestEvent::Stopped]),
-            TestCommand::Start(_) => Err(AggregateError::RejectedCommand(
-                "Active TestAggregate cannot be restarted.".to_string(),
-            )),
+            TestCommand::Test(value) => CommandResult::Ok(vec![TestEvent::Tested(value)]),
+            TestCommand::Stop => CommandResult::Ok(vec![TestEvent::Stopped]),
+            TestCommand::Start(_) => {
+                CommandResult::Rejected("Active TestAggregate cannot be restarted.".to_string())
+            }
         }
     }
 
@@ -475,10 +499,10 @@ impl AggregateState<TestCommand, TestEvent> for CompletedState {
         &self,
         command: TestCommand,
         _ctx: &mut ActorContext,
-    ) -> Result<Vec<TestEvent>, Self::Error> {
-        Err(AggregateError::RejectedCommand(format!(
+    ) -> CommandResult<Vec<TestEvent>, Self::Error> {
+        CommandResult::Rejected(format!(
             "Completed TestAggregate does not accept further comments: {command:?}"
-        )))
+        ))
     }
 
     #[instrument(level = "debug", skip(_ctx))]

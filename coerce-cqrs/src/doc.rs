@@ -1,4 +1,4 @@
-use crate::{ApplyAggregateEvent, CommandResult};
+use crate::{AggregateState, CommandResult};
 use coerce::actor::context::ActorContext;
 use coerce::actor::message::Handler;
 use coerce::persistent::journal::types::JournalTypes;
@@ -6,7 +6,7 @@ use coerce::persistent::{PersistentActor, Recover};
 use tagid::{CuidGenerator, Entity, Label};
 
 #[derive(Debug, JsonMessage, Serialize, Deserialize)]
-#[result("CommandResult<usize>")]
+#[result("CommandResult<usize, String>")]
 pub enum MyCommand {
     DoSomething,
     BadCommand,
@@ -36,15 +36,22 @@ impl PersistentActor for MyAggregate {
 
 #[async_trait]
 impl Handler<MyCommand> for MyAggregate {
-    async fn handle(&mut self, command: MyCommand, ctx: &mut ActorContext) -> CommandResult<usize> {
-        let events = match command {
-            MyCommand::DoSomething => vec![MyEvent::SomethingWasDone],
-            MyCommand::BadCommand => return CommandResult::Rejected("BadCommand".to_string()),
+    async fn handle(
+        &mut self,
+        command: MyCommand,
+        ctx: &mut ActorContext,
+    ) -> CommandResult<usize, String> {
+        let events = match self.handle_command(command, ctx) {
+            CommandResult::Ok(evts) => evts,
+            CommandResult::Rejected(msg) => return CommandResult::Rejected(msg),
+            CommandResult::Err(()) => {
+                return CommandResult::Err("failed to handle command".to_string())
+            }
         };
 
         for event in events.iter() {
             if let Err(error) = self.persist(event, ctx).await {
-                return error.into();
+                return error.to_string().into();
             }
         }
 
@@ -58,10 +65,24 @@ impl Handler<MyCommand> for MyAggregate {
     }
 }
 
-impl ApplyAggregateEvent<MyEvent> for MyAggregate {
-    type BaseType = Self;
+impl AggregateState<MyCommand, MyEvent> for MyAggregate {
+    type Error = ();
+    type State = Self;
 
-    fn apply_event(&mut self, event: MyEvent, _ctx: &mut ActorContext) -> Option<Self::BaseType> {
+    fn handle_command(
+        &self,
+        command: MyCommand,
+        _ctx: &mut ActorContext,
+    ) -> CommandResult<Vec<MyEvent>, Self::Error> {
+        use MyCommand as C;
+
+        match command {
+            C::DoSomething => CommandResult::Ok(vec![MyEvent::SomethingWasDone]),
+            C::BadCommand => CommandResult::Rejected("BadCommand".to_string()),
+        }
+    }
+
+    fn apply_event(&mut self, event: MyEvent, _ctx: &mut ActorContext) -> Option<Self::State> {
         match event {
             MyEvent::SomethingWasDone => {
                 self.count += 1;
@@ -71,6 +92,19 @@ impl ApplyAggregateEvent<MyEvent> for MyAggregate {
         None
     }
 }
+// impl ApplyAggregateEvent<MyEvent> for MyAggregate {
+//     type BaseType = Self;
+//
+//     fn apply_event(&mut self, event: MyEvent, _ctx: &mut ActorContext) -> Option<Self::BaseType> {
+//         match event {
+//             MyEvent::SomethingWasDone => {
+//                 self.count += 1;
+//             }
+//         }
+//
+//         None
+//     }
+// }
 
 #[async_trait]
 impl Recover<MyEvent> for MyAggregate {
