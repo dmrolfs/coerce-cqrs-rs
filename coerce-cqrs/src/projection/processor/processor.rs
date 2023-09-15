@@ -100,6 +100,9 @@ impl Processor {
 /// Manages the `Processor` lifecycle
 pub trait ProcessorLifecycle {}
 
+#[allow(dead_code)]
+pub type ProcessorEngineRef = Arc<ProcessorEngine<Running>>;
+
 /// The `ProcessorEngine` subscribes to an aggregates `JournalEntry`s and processes the entries one
 /// at a time. There can be more than one Processor for an aggregate type. Processors can be used to
 /// update aggregate view projections for different requirements. The Processor can be thought
