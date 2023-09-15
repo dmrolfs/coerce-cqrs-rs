@@ -139,6 +139,9 @@ pub enum ProjectionError {
         meta: HashMap<String, String>,
     },
 
+    #[error("failure in projection processor: {0}")]
+    Processor(#[from] processor::ProcessorError),
+
     #[error("Failed during while applying event to projection: {0}")]
     EventApplication(#[from] anyhow::Error),
 }
