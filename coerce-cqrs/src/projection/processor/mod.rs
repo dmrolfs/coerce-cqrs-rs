@@ -9,7 +9,7 @@ pub use processor::{
     protocol::{ProcessorApi, ProcessorCommand},
     AggregateEntries, AggregateOffsets, AggregateSequences, Building, Processor, ProcessorContext,
     ProcessorEngine, ProcessorError, ProcessorLifecycle, ProcessorSource, ProcessorSourceProvider,
-    ProcessorSourceRef, Ready, Running,
+    ProcessorSourceRef, Ready, Running, ProcessorEngineRef,
 };
 
 use crate::projection::ProjectionError;

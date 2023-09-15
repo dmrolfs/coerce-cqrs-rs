@@ -109,7 +109,6 @@ impl Processor {
 /// Manages the `Processor` lifecycle
 pub trait ProcessorLifecycle {}
 
-#[allow(dead_code)]
 pub type ProcessorEngineRef = Arc<ProcessorEngine<Running>>;
 
 /// The `ProcessorEngine` subscribes to an aggregates `JournalEntry`s and processes the entries one
