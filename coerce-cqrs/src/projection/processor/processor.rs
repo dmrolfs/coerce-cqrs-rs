@@ -24,12 +24,21 @@ pub mod protocol {
     #[allow(dead_code)]
     #[derive(Debug)]
     pub enum ProcessorCommand {
-        Stop(oneshot::Sender<()>),
         GetOffset(PersistenceId, oneshot::Sender<Option<Offset>>),
+        Stop(oneshot::Sender<()>),
     }
 
     #[allow(dead_code)]
     impl ProcessorCommand {
+        pub async fn get_offset(
+            persistence_id: PersistenceId,
+            api: &ProcessorApi,
+        ) -> Result<Option<Offset>, ProcessorError> {
+            let (tx, rx) = oneshot::channel();
+            api.send(Self::GetOffset(persistence_id, tx))?;
+            Ok(rx.await?)
+        }
+
         pub async fn stop(api: &ProcessorApi) -> Result<(), ProcessorError> {
             let (tx, rx) = oneshot::channel();
             api.send(Self::Stop(tx))?;
