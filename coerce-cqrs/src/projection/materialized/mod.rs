@@ -4,7 +4,7 @@ mod projection_storage;
 
 pub use projection_applicator::ProjectionApplicator;
 pub use projection_memory_storage::InMemoryProjectionStorage;
-pub use projection_storage::ProjectionStorage;
+pub use projection_storage::{ProjectionStorage, ProjectionStorageRef};
 
 // use serde::{Deserialize, Serialize};
 // use smol_str::SmolStr;

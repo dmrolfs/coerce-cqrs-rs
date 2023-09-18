@@ -71,7 +71,7 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow!("no processor storage!"))?;
     let system = system.to_persistent(Persistence::from(storage_provider));
 
-    let processor = Processor::builder_for::<TestAggregate, _, _, _>(projection_name.clone())
+    let processor = Processor::builder_for::<TestAggregate, _, _, _, _>(projection_name.clone())
         .with_entry_handler(view_apply)
         .with_system(system.clone())
         .with_source(storage.clone())

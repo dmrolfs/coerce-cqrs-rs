@@ -39,7 +39,7 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
     let pid = PersistenceId::from_aggregate_id::<TestAggregate>(aid.id.as_str());
     let vid = pid.clone();
 
-    let processor = Processor::builder_for::<TestAggregate, _, _, _>("test_memory_projection")
+    let processor = Processor::builder_for::<TestAggregate, _, _, _, _>("test_memory_projection")
         .with_entry_handler(view_apply)
         .with_system(system.clone())
         .with_source(storage.clone())

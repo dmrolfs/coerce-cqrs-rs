@@ -1,15 +1,19 @@
+mod engine;
 mod interval;
 #[allow(clippy::module_inception)]
 mod processor;
 
+pub use engine::building::Building;
+pub use engine::ready::Ready;
+pub use engine::running::Running;
+pub use engine::{ProcessorEngine, ProcessorEngineRef, ProcessorLifecycle};
 pub use interval::{
     CalculateInterval, CalculateIntervalFactory, ExponentialBackoff, RegularInterval,
 };
+pub use processor::protocol::{ProcessorApi, ProcessorCommand};
 pub use processor::{
-    protocol::{ProcessorApi, ProcessorCommand},
-    AggregateEntries, AggregateOffsets, AggregateSequences, Building, Processor, ProcessorContext,
-    ProcessorEngine, ProcessorEngineRef, ProcessorError, ProcessorLifecycle, ProcessorSource,
-    ProcessorSourceProvider, ProcessorSourceRef, Ready, Running,
+    AggregateEntries, AggregateOffsets, AggregateSequences, Processor, ProcessorContext,
+    ProcessorError, ProcessorSource, ProcessorSourceProvider, ProcessorSourceRef,
 };
 
 use crate::projection::ProjectionError;
