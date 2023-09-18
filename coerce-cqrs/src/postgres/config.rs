@@ -124,6 +124,7 @@ impl PartialEq for PostgresStorageConfig {
             && self.min_connections == other.min_connections
             && self.max_connections == other.max_connections
             && self.max_lifetime == other.max_lifetime
+            && self.acquire_timeout == other.acquire_timeout
             && self.idle_timeout == other.idle_timeout
     }
 }
