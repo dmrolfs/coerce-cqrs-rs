@@ -6,7 +6,9 @@ pub mod processor;
 
 pub use commit_action::PostCommitAction;
 pub use event_envelope::EventEnvelope;
-pub use materialized::{InMemoryProjectionStorage, ProjectionApplicator, ProjectionStorage};
+pub use materialized::{
+    InMemoryProjectionStorage, ProjectionApplicator, ProjectionStorage, ProjectionStorageRef,
+};
 pub use offset::Offset;
 
 use coerce::persistent::PersistentActor;
