@@ -73,7 +73,7 @@ async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
         .with_entry_handler(view_apply)
         .with_system(system.clone())
         .with_source(storage.clone())
-        .with_projection_source(view_storage.clone())
+        .with_projection_storage(view_storage.clone())
         .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(50)));
 
     let processor = assert_ok!(processor.finish());

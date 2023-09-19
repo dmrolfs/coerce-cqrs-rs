@@ -93,7 +93,7 @@ where
     }
 
     #[allow(clippy::missing_const_for_fn)]
-    pub fn with_projection_source(self, projection_storage: ProjectionStorageRef<VID, P>) -> Self {
+    pub fn with_projection_storage(self, projection_storage: ProjectionStorageRef<VID, P>) -> Self {
         Self {
             inner: Building {
                 projection_storage: Some(projection_storage),

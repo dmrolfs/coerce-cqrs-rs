@@ -43,7 +43,7 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
         .with_entry_handler(view_apply)
         .with_system(system.clone())
         .with_source(storage.clone())
-        .with_projection_source(view_storage.clone())
+        .with_projection_storage(view_storage.clone())
         .with_interval_calculator(RegularInterval::of_duration(Duration::from_millis(25)));
 
     let processor = assert_ok!(processor.finish());
