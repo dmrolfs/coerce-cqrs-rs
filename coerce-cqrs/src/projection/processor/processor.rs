@@ -53,6 +53,9 @@ pub enum ProcessorError {
 
     #[error("uninitialized field error: {0}")]
     UninitializedField(String),
+
+    #[error("{0}")]
+    Other(#[source] anyhow::Error),
 }
 
 pub type ProcessorSourceRef = Arc<dyn ProcessorSource>;
