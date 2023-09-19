@@ -18,7 +18,7 @@ where
     entry_handler: Option<Arc<H>>,
     system: Option<ActorSystem>,
     source: Option<ProcessorSourceRef>,
-    projection_source: Option<ProjectionStorageRef<VID, P>>,
+    projection_storage: Option<ProjectionStorageRef<VID, P>>,
     interval_calculator: Option<I>,
 }
 
@@ -56,7 +56,7 @@ where
                 entry_handler: None,
                 system: None,
                 source: None,
-                projection_source: None,
+                projection_storage: None,
                 interval_calculator: None,
             },
         }
@@ -93,10 +93,10 @@ where
     }
 
     #[allow(clippy::missing_const_for_fn)]
-    pub fn with_projection_source(self, projection_source: ProjectionStorageRef<VID, P>) -> Self {
+    pub fn with_projection_source(self, projection_storage: ProjectionStorageRef<VID, P>) -> Self {
         Self {
             inner: Building {
-                projection_source: Some(projection_source),
+                projection_storage: Some(projection_storage),
                 ..self.inner
             },
         }
@@ -132,8 +132,8 @@ where
 
         let projection_storage = self
             .inner
-            .projection_source
-            .ok_or_else(|| ProcessorError::UninitializedField("projection_source".to_string()))?;
+            .projection_storage
+            .ok_or_else(|| ProcessorError::UninitializedField("projection_storage".to_string()))?;
 
         let interval_calculator = self
             .inner
