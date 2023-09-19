@@ -25,7 +25,7 @@ pub struct ProjectionEntry {
 #[derive(Debug)]
 pub struct PostgresProjectionStorage<V> {
     name: SmolStr,
-    view_storage_table: SmolStr,
+    view_storage_table: Option<SmolStr>,
     offset_storage_table: SmolStr,
     storage: LocalActorRef<PostgresProjectionStorageActor>,
     _marker: PhantomData<V>,
@@ -35,7 +35,7 @@ impl<V> PostgresProjectionStorage<V> {
     #[instrument(level = "trace", skip(config, system,))]
     pub async fn new(
         name: &str,
-        view_storage_table: &str,
+        view_storage_table: Option<&str>,
         offset_storage_table: &str,
         config: &PostgresStorageConfig,
         system: &ActorSystem,
@@ -59,7 +59,7 @@ impl<V> PostgresProjectionStorage<V> {
 
         Ok(Self {
             name,
-            view_storage_table: SmolStr::new(view_storage_table),
+            view_storage_table: view_storage_table.map(SmolStr::new),
             offset_storage_table: SmolStr::new(offset_storage_table),
             storage,
             _marker: PhantomData,
@@ -93,7 +93,7 @@ where
         skip(self),
         fields(
             projection_name=%self.name,
-            view_storage_table=%self.view_storage_table,
+            view_storage_table=?self.view_storage_table,
             offset_storage_table=%self.offset_storage_table,
         )
     )]
@@ -107,7 +107,7 @@ where
                 .map_err(|err| ProjectionError::Storage {
                     cause: err.into(),
                     meta: maplit::hashmap! {
-                        META_VIEW_TABLE.to_string() => self.view_storage_table.to_string(),
+                        META_VIEW_TABLE.to_string() => self.view_storage_table.as_ref().map(|t| t.to_string()).unwrap_or_else(|| "<none>".to_string()),
                         META_PERSISTENCE_ID.to_string() => view_id.to_string(),
                         META_PROJECTION_NAME.to_string() => self.name.to_string(),
                     },
@@ -134,7 +134,7 @@ where
         skip(self),
         fields(
             projection_name=%self.name,
-            view_storage_table=%self.view_storage_table,
+            view_storage_table=?self.view_storage_table,
             offset_storage_table=%self.offset_storage_table,
         )
     )]
@@ -161,7 +161,7 @@ where
         .map_err(|err| ProjectionError::Storage {
             cause: err.into(),
             meta: maplit::hashmap! {
-                META_VIEW_TABLE.to_string() => self.view_storage_table.to_string(),
+                META_VIEW_TABLE.to_string() => self.view_storage_table.as_ref().map(|t| t.to_string()).unwrap_or_else(|| "<none>".to_string()),
                 META_OFFSET_TABLE.to_string() => self.offset_storage_table.to_string(),
                 META_PERSISTENCE_ID.to_string() => view_id.to_string(),
                 META_PROJECTION_NAME.to_string() => self.name.to_string(),
@@ -392,7 +392,7 @@ mod actor {
     impl PostgresProjectionStorageActor {
         pub fn new(
             pool: PgPool,
-            projection_storage_table: &str,
+            projection_storage_table: Option<&str>,
             offset_storage_table: &str,
         ) -> Self {
             let sql_query = ProjectionStorageSqlQueryFactory::new(
@@ -433,7 +433,11 @@ mod actor {
             message: LoadProjection,
             _ctx: &mut ActorContext,
         ) -> Result<Option<ProjectionEntry>, PostgresStorageError> {
-            sqlx::query(self.sql_query.select_latest_view())
+            let Some(select_sql) = self.sql_query.select_latest_view() else {
+                return Ok(None);
+            };
+
+            sqlx::query(select_sql)
                 .bind(&message.view_key)
                 .map(|row| self.entry_from_row(row))
                 .fetch_optional(&self.pool)
@@ -461,16 +465,19 @@ mod actor {
             let now = crate::util::now_timestamp();
 
             let save_projection_result = match message.entry {
-                Some(entry) => Some(
-                    sqlx::query(self.sql_query.update_or_insert_view())
+                Some(entry) => match self.sql_query.update_or_insert_view() {
+                    None => None,
+                    Some(update_sql) => sqlx::query(update_sql)
                         .bind(&view_key)
                         .bind(entry.bytes.to_vec())
                         .bind(now)
                         .bind(now)
                         .execute(&mut *tx)
                         .await
-                        .map_err(|err| err.into()),
-                ),
+                        .map_err(|err| err.into())
+                        .map(Some)
+                        .transpose(),
+                },
 
                 None => None,
             }
@@ -619,10 +626,10 @@ mod sql_query {
     });
 
     pub struct ProjectionStorageSqlQueryFactory {
-        projection_storage_table: SmolStr,
+        projection_storage_table: Option<SmolStr>,
         offset_storage_table: SmolStr,
-        select_view: OnceCell<String>,
-        update_or_insert_view: OnceCell<String>,
+        select_latest_view: OnceCell<Option<String>>,
+        update_or_insert_view: OnceCell<Option<String>>,
         select_all_offsets: OnceCell<String>,
         select_offset: OnceCell<String>,
         update_or_insert_offset: OnceCell<String>,
@@ -637,11 +644,11 @@ mod sql_query {
     }
 
     impl ProjectionStorageSqlQueryFactory {
-        pub fn new(projection_storage_table: &str, offset_storage_table: &str) -> Self {
+        pub fn new(projection_storage_table: Option<&str>, offset_storage_table: &str) -> Self {
             Self {
-                projection_storage_table: SmolStr::new(projection_storage_table),
+                projection_storage_table: projection_storage_table.map(SmolStr::new),
                 offset_storage_table: SmolStr::new(offset_storage_table),
-                select_view: OnceCell::new(),
+                select_latest_view: OnceCell::new(),
                 update_or_insert_view: OnceCell::new(),
                 select_all_offsets: OnceCell::new(),
                 select_offset: OnceCell::new(),
@@ -695,40 +702,52 @@ mod sql_query {
         }
 
         #[inline]
-        pub fn select_latest_view(&self) -> &str {
-            self.select_view.get_or_init(|| {
-                sql::Select::new()
-                    .select(&PROJECTION_STORAGE_COLUMNS_REP)
-                    .from(self.projection_storage_table.as_str())
-                    .where_clause(self.where_projection_id())
-                    .order_by(format!("{LAST_UPDATED_AT_COL} desc").as_str())
-                    .limit("1")
-                    .to_string()
-            })
+        pub fn select_latest_view(&self) -> Option<&str> {
+            let select_sql = self.select_latest_view.get_or_init(|| {
+                self.projection_storage_table
+                    .as_ref()
+                    .map(|projection_table| {
+                        sql::Select::new()
+                            .select(&PROJECTION_STORAGE_COLUMNS_REP)
+                            .from(projection_table.as_str())
+                            .where_clause(self.where_projection_id())
+                            .order_by(format!("{LAST_UPDATED_AT_COL} desc").as_str())
+                            .limit("1")
+                            .to_string()
+                    })
+            });
+
+            select_sql.as_ref().map(|sql| sql.as_str())
         }
 
         #[inline]
-        pub fn update_or_insert_view(&self) -> &str {
-            self.update_or_insert_view.get_or_init(|| {
-                let payload_col = self.payload_column();
-                let update_clause = sql::Update::new()
-                    .set(format!("{payload_col} = EXCLUDED.{payload_col}, last_updated_at = EXCLUDED.last_updated_at").as_str())
-                    .to_string();
+        pub fn update_or_insert_view(&self) -> Option<&str> {
+            let update_sql = self.update_or_insert_view.get_or_init(|| {
+                self.projection_storage_table
+                    .as_ref()
+                    .map(|projection_table| {
+                        let payload_col = self.payload_column();
+                        let update_clause = sql::Update::new()
+                            .set(format!("{payload_col} = EXCLUDED.{payload_col}, last_updated_at = EXCLUDED.last_updated_at").as_str())
+                            .to_string();
 
-                let conflict_clause = format!("( {primary_key} ) DO UPDATE {update_clause}", primary_key = self.projection_id_column());
+                        let conflict_clause = format!("( {primary_key} ) DO UPDATE {update_clause}", primary_key = self.projection_id_column());
 
-                sql::Insert::new()
-                    .insert_into(
-                        format!(
-                            "{table} ( {columns} )",
-                            table = self.projection_storage_table, columns = PROJECTION_STORAGE_COLUMNS_REP.as_str(),
-                        )
-                        .as_str(),
-                    )
-                    .values(PROJECTION_STORAGE_VALUES_REP.as_str())
-                    .on_conflict(&conflict_clause)
-                    .to_string()
-            })
+                        sql::Insert::new()
+                            .insert_into(
+                                format!(
+                                    "{table} ( {columns} )",
+                                    table = projection_table, columns = PROJECTION_STORAGE_COLUMNS_REP.as_str(),
+                                )
+                                    .as_str(),
+                            )
+                            .values(PROJECTION_STORAGE_VALUES_REP.as_str())
+                            .on_conflict(&conflict_clause)
+                            .to_string()
+                    })
+            });
+
+            update_sql.as_ref().map(|sql| sql.as_str())
         }
 
         #[inline]

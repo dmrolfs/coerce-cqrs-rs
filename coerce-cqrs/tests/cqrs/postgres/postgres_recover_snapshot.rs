@@ -49,7 +49,7 @@ async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
     let view_storage = assert_ok!(
         PostgresProjectionStorage::<TestView>::new(
             projection_name,
-            "test_view",
+            Some("test_view"),
             "projection_offset",
             &storage_config,
             &system
