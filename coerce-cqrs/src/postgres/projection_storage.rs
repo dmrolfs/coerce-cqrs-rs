@@ -22,7 +22,7 @@ pub struct ProjectionEntry {
 }
 
 /// A Postgres-backed view storage for use in a GenericViewProcessor.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PostgresProjectionStorage<V> {
     name: SmolStr,
     view_storage_table: Option<SmolStr>,

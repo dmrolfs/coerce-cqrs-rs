@@ -83,6 +83,7 @@ impl StorageProvider for PostgresStorageProvider {
     }
 }
 
+#[derive(Clone)]
 pub struct PostgresJournalStorage {
     postgres_journal: LocalActorRef<PostgresJournal>,
     config: PostgresStorageConfig,

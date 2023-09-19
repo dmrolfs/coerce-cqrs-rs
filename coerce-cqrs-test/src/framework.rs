@@ -211,7 +211,6 @@ fn entry_from<M: Message>(payload_type: &str, message: M, sequence_id: i64) -> J
     }
 }
 
-// #[derive(Debug)]
 pub struct AggregateTestExecutor<A>
 where
     A: PersistentActor + Entity,
@@ -234,6 +233,21 @@ where
             .field("aggregate_id", &self.aggregate_id)
             .field("system_id", &self.system.system_id())
             .finish()
+    }
+}
+
+impl<A> Clone for AggregateTestExecutor<A>
+where
+    A: Clone + PersistentActor + Entity,
+    <<A as Entity>::IdGen as IdGenerator>::IdType: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            actor: self.actor.clone(),
+            aggregate_id: self.aggregate_id.clone(),
+            system: self.system.clone(),
+            journal: self.journal.clone(),
+        }
     }
 }
 
