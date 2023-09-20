@@ -1,5 +1,5 @@
-use crate::postgres::config;
 use crate::postgres::projection_storage::actor::PostgresProjectionStorageActor;
+use crate::postgres::{config, TableName};
 use crate::postgres::{PostgresStorageConfig, PostgresStorageError};
 use crate::projection::processor::AggregateOffsets;
 use crate::projection::{
@@ -25,8 +25,8 @@ pub struct ProjectionEntry {
 #[derive(Debug, Clone)]
 pub struct PostgresProjectionStorage<V> {
     name: SmolStr,
-    view_storage_table: Option<SmolStr>,
-    offset_storage_table: SmolStr,
+    view_storage_table: Option<TableName>,
+    offset_storage_table: TableName,
     storage: LocalActorRef<PostgresProjectionStorageActor>,
     _marker: PhantomData<V>,
 }
@@ -35,8 +35,8 @@ impl<V> PostgresProjectionStorage<V> {
     #[instrument(level = "trace", skip(config, system,))]
     pub async fn new(
         name: &str,
-        view_storage_table: Option<&str>,
-        offset_storage_table: &str,
+        view_storage_table: Option<TableName>,
+        offset_storage_table: TableName,
         config: &PostgresStorageConfig,
         system: &ActorSystem,
     ) -> Result<Self, PostgresStorageError> {
@@ -45,8 +45,8 @@ impl<V> PostgresProjectionStorage<V> {
         let connection_pool = config::connect_with(config);
         let storage = PostgresProjectionStorageActor::new(
             connection_pool,
-            view_storage_table,
-            offset_storage_table,
+            view_storage_table.clone(),
+            offset_storage_table.clone(),
         )
         .into_actor(
             Some(format!(
@@ -59,8 +59,8 @@ impl<V> PostgresProjectionStorage<V> {
 
         Ok(Self {
             name,
-            view_storage_table: view_storage_table.map(SmolStr::new),
-            offset_storage_table: SmolStr::new(offset_storage_table),
+            view_storage_table,
+            offset_storage_table,
             storage,
             _marker: PhantomData,
         })
@@ -373,7 +373,7 @@ mod actor {
         LoadAllOffsets, LoadOffset, LoadProjection, SaveProjection, SavedProjectOutcome,
     };
     use crate::postgres::projection_storage::ProjectionEntry;
-    use crate::postgres::PostgresStorageError;
+    use crate::postgres::{PostgresStorageError, TableName};
     use crate::projection::{Offset, PersistenceId};
     use coerce::actor::context::ActorContext;
     use coerce::actor::message::{Handler, Message};
@@ -390,10 +390,10 @@ mod actor {
     }
 
     impl PostgresProjectionStorageActor {
-        pub fn new(
+        pub const fn new(
             pool: PgPool,
-            projection_storage_table: Option<&str>,
-            offset_storage_table: &str,
+            projection_storage_table: Option<TableName>,
+            offset_storage_table: TableName,
         ) -> Self {
             let sql_query = ProjectionStorageSqlQueryFactory::new(
                 projection_storage_table,
@@ -582,8 +582,8 @@ mod actor {
 }
 
 mod sql_query {
+    use crate::postgres::TableName;
     use once_cell::sync::{Lazy, OnceCell};
-    use smol_str::SmolStr;
     use sql_query_builder as sql;
     use std::fmt;
 
@@ -626,8 +626,8 @@ mod sql_query {
     });
 
     pub struct ProjectionStorageSqlQueryFactory {
-        projection_storage_table: Option<SmolStr>,
-        offset_storage_table: SmolStr,
+        projection_storage_table: Option<TableName>,
+        offsets_storage_table: TableName,
         select_latest_view: OnceCell<Option<String>>,
         update_or_insert_view: OnceCell<Option<String>>,
         select_all_offsets: OnceCell<String>,
@@ -639,15 +639,21 @@ mod sql_query {
 
     impl fmt::Debug for ProjectionStorageSqlQueryFactory {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.debug_struct("ProjectionStorageSqlQueryFactory").finish()
+            f.debug_struct("ProjectionStorageSqlQueryFactory")
+                .field("Projection_storage_table", &self.projection_storage_table)
+                .field("offsets_storage_table", &self.offsets_storage_table)
+                .finish()
         }
     }
 
     impl ProjectionStorageSqlQueryFactory {
-        pub fn new(projection_storage_table: Option<&str>, offset_storage_table: &str) -> Self {
+        pub const fn new(
+            projection_storage_table: Option<TableName>,
+            offsets_storage_table: TableName,
+        ) -> Self {
             Self {
-                projection_storage_table: projection_storage_table.map(SmolStr::new),
-                offset_storage_table: SmolStr::new(offset_storage_table),
+                projection_storage_table,
+                offsets_storage_table,
                 select_latest_view: OnceCell::new(),
                 update_or_insert_view: OnceCell::new(),
                 select_all_offsets: OnceCell::new(),
@@ -709,7 +715,7 @@ mod sql_query {
                     .map(|projection_table| {
                         sql::Select::new()
                             .select(&PROJECTION_STORAGE_COLUMNS_REP)
-                            .from(projection_table.as_str())
+                            .from(projection_table.as_ref())
                             .where_clause(self.where_projection_id())
                             .order_by(format!("{LAST_UPDATED_AT_COL} desc").as_str())
                             .limit("1")
@@ -755,7 +761,7 @@ mod sql_query {
             self.select_all_offsets.get_or_init(|| {
                 sql::Select::new()
                     .select(&OFFSET_COLUMNS_REP)
-                    .from(self.offset_storage_table.as_str())
+                    .from(self.offsets_storage_table.as_ref())
                     .where_clause(self.where_projection_id())
                     .order_by(format!("{CURRENT_OFFSET_COL} desc").as_str())
                     .to_string()
@@ -767,7 +773,7 @@ mod sql_query {
             self.select_offset.get_or_init(|| {
                 sql::Select::new()
                     .select(&OFFSET_COLUMNS_REP)
-                    .from(self.offset_storage_table.as_str())
+                    .from(self.offsets_storage_table.as_ref())
                     .where_clause(self.where_projection_and_aggregate())
                     .order_by(format!("{CURRENT_OFFSET_COL} desc").as_str())
                     .limit("1")
@@ -792,7 +798,7 @@ mod sql_query {
                     .insert_into(
                         format!(
                             "{table} ( {columns} )",
-                            table = self.offset_storage_table, columns = OFFSET_COLUMNS_REP.as_str(),
+                            table = self.offsets_storage_table, columns = OFFSET_COLUMNS_REP.as_str(),
                         )
                             .as_str()
                     )

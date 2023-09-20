@@ -160,10 +160,10 @@ impl PostgresJournal {
         post_commit_actions: Vec<Box<dyn PostCommitAction>>,
     ) -> Self {
         let sql_query = SqlQueryFactory::new(
-            &config.event_journal_table_name,
-            &config.projection_offsets_table_name,
+            config.event_journal_table_name.clone(),
+            config.projection_offsets_table_name.clone(),
         )
-        .with_snapshots_table(&config.snapshot_table_name);
+        .with_snapshots_table(config.snapshot_table_name.clone());
 
         Self {
             pool,
@@ -203,17 +203,13 @@ impl Actor for PostgresJournal {
 const EMPTY_META: serde_json::Value = serde_json::Value::Null;
 
 impl PostgresJournal {
-    #[instrument(
-        level = "debug",
-        skip(tx, ctx),
-        fields(ctx=ctx.log().as_value())
-    )]
+    #[instrument(level = "debug", skip(tx, _ctx))]
     async fn persist_message(
         &self,
         storage_key: &StorageKey,
         entry: JournalEntry,
         tx: &mut Transaction<'_, Postgres>,
-        ctx: &mut ActorContext,
+        _ctx: &mut ActorContext,
     ) -> Result<PgQueryResult, PostgresStorageError> {
         let query = sqlx::query(self.sql_query.append_event())
             .bind(storage_key) // persistence_id
@@ -287,14 +283,12 @@ impl Handler<WriteMessages> for PostgresJournal {
 
 #[async_trait]
 impl Handler<WriteSnapshot> for PostgresJournal {
-    #[instrument(level = "debug", skip(ctx), fields(ctx=ctx.log().as_value()))]
+    #[instrument(level = "debug", skip(_ctx))]
     async fn handle(
         &mut self,
         message: WriteSnapshot,
-        ctx: &mut ActorContext,
+        _ctx: &mut ActorContext,
     ) -> <WriteSnapshot as Message>::Result {
-        // let storage_key = message.storage_key.as_ref();
-
         let now = crate::util::now_timestamp();
 
         let mut tx = sqlx::Acquire::begin(&self.pool).await?;
@@ -329,7 +323,7 @@ impl Handler<FindAllPersistenceIds> for PostgresJournal {
         _message: FindAllPersistenceIds,
         ctx: &mut ActorContext,
     ) -> <FindAllPersistenceIds as Message>::Result {
-        let persistence_id_column = self.sql_query.persistence_id_column();
+        let persistence_id_column = self.sql_query.persistence_id_column().as_str();
         let keys: Result<Vec<StorageKey>, PostgresStorageError> =
             sqlx::query(self.sql_query.select_persistence_ids())
                 .map(|row: PgRow| row.get(persistence_id_column))
@@ -352,7 +346,7 @@ impl PostgresJournal {
         manifest_column: &str,
         payload_column: &str,
     ) -> JournalEntry {
-        let sequence = row.get(self.sql_query.sequence_number_column());
+        let sequence = row.get(self.sql_query.sequence_number_column().as_str());
         let payload_type: String = row.get(manifest_column);
         let payload_type = Arc::from(payload_type);
         let bytes = Arc::new(row.get(payload_column));
@@ -366,11 +360,11 @@ impl PostgresJournal {
 
 #[async_trait]
 impl Handler<ReadSnapshot> for PostgresJournal {
-    #[instrument(level = "debug", skip(ctx), fields(ctx=ctx.log().as_value()))]
+    #[instrument(level = "debug", skip(_ctx))]
     async fn handle(
         &mut self,
         message: ReadSnapshot,
-        ctx: &mut ActorContext,
+        _ctx: &mut ActorContext,
     ) -> <ReadSnapshot as Message>::Result {
         sqlx::query(self.sql_query.select_snapshot())
             .bind(&message.storage_key)
@@ -389,11 +383,11 @@ impl Handler<ReadSnapshot> for PostgresJournal {
 
 #[async_trait]
 impl Handler<ReadBulkLatestMessages> for PostgresJournal {
-    #[instrument(level="debug", skip(ctx,), fields(ctx=ctx.log().as_value()))]
+    #[instrument(level = "debug", skip(_ctx,))]
     async fn handle(
         &mut self,
         message: ReadBulkLatestMessages,
-        ctx: &mut ActorContext,
+        _ctx: &mut ActorContext,
     ) -> <ReadBulkLatestMessages as Message>::Result {
         let manifest_column = self.sql_query.event_manifest_column();
         let payload_column = self.sql_query.event_payload_column();
@@ -420,37 +414,17 @@ impl Handler<ReadBulkLatestMessages> for PostgresJournal {
         } else {
             Ok(Some(result))
         }
-
-        // sqlx::query(self.sql_query.select_all_latest_events())
-        //     .bind(message.projection_id)
-        //     .map(|row: PgRow| {
-        //         let storage_key: StorageKey = row.get(persistence_id_column);
-        //         let entry = self.entry_from_row(row, manifest_column, payload_column);
-        //         self.storage_key_into_parts(storage_key)
-        //             .map(|parts| (parts.1, entry))
-        //     })
-        //     .fetch_all(&self.pool)
-        //     .await
-        //     .map_err(|err| err.into())
-        //     .and_then(|pid_entries| {
-        //         let pid_entries: Result<Vec<_>, PostgresStorageError> =
-        //             pid_entries.into_iter().collect();
-        //         pid_entries
-        //     })
-        //     .map(Some)
     }
 }
 
 #[async_trait]
 impl Handler<ReadMessages> for PostgresJournal {
-    #[instrument(level = "debug", skip(ctx), fields(ctx=ctx.log().as_value()))]
+    #[instrument(level = "debug", skip(_ctx))]
     async fn handle(
         &mut self,
         message: ReadMessages,
-        ctx: &mut ActorContext,
+        _ctx: &mut ActorContext,
     ) -> <ReadMessages as Message>::Result {
-        // let persistence_id = message.storage_key.as_ref();
-
         let query = match message.sequence {
             SequenceRange::Single(sequence) => sqlx::query(self.sql_query.select_event())
                 .bind(&message.storage_key)
@@ -491,14 +465,12 @@ impl Handler<ReadMessages> for PostgresJournal {
 
 #[async_trait]
 impl Handler<DeleteMessages> for PostgresJournal {
-    #[instrument(level = "debug", skip(ctx), fields(ctx=ctx.log().as_value()))]
+    #[instrument(level = "debug", skip(_ctx))]
     async fn handle(
         &mut self,
         message: DeleteMessages,
-        ctx: &mut ActorContext,
+        _ctx: &mut ActorContext,
     ) -> <DeleteMessages as Message>::Result {
-        // let storage_key = message.storage_key.as_ref();
-
         let mut tx = sqlx::Acquire::begin(&self.pool).await?;
         let query = match message.sequence {
             SequenceRange::Single(sequence) => sqlx::query(self.sql_query.delete_event())
@@ -545,22 +517,13 @@ impl Handler<DeleteAll> for PostgresJournal {
         message: DeleteAll,
         ctx: &mut ActorContext,
     ) -> <DeleteAll as Message>::Result {
-        // let mut results = Vec::with_capacity(message.0.len());
         for storage_key in message.0 {
             let cmd = DeleteMessages {
                 storage_key,
                 sequence: SequenceRange::All,
             };
             ctx.actor_ref::<Self>().send(cmd).await??;
-            // let handle = tokio::spawn(async move { s.delete_all(storage_key.as_ref()).await });
-            // results.push(handle);
         }
-        // futures::future::join_all(results)
-        //     .await
-        //     .into_iter()
-        //     .flatten()
-        //     .find(|r| r.is_err())
-        //     .unwrap_or(Ok(()))
         Ok(())
     }
 }

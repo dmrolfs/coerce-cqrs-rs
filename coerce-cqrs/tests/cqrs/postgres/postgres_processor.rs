@@ -5,7 +5,7 @@ use coerce::actor::system::ActorSystem;
 use coerce::actor::IntoActor;
 use coerce::persistent::Persistence;
 use coerce_cqrs::postgres::{
-    PostgresProjectionStorage, PostgresStorageConfig, PostgresStorageProvider,
+    PostgresProjectionStorage, PostgresStorageConfig, PostgresStorageProvider, TableName,
 };
 use coerce_cqrs::projection::processor::{Processor, ProcessorSourceProvider, RegularInterval};
 use coerce_cqrs::projection::{PersistenceId, ProjectionApplicator, ProjectionStorage};
@@ -53,8 +53,8 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     let view_storage = assert_ok!(
         PostgresProjectionStorage::<TestView>::new(
             &projection_name,
-            Some("test_view"),
-            "projection_offset",
+            TableName::new("test_view").ok(),
+            TableName::new("projection_offset").unwrap(),
             &storage_config,
             &system
         )

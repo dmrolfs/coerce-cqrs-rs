@@ -1,3 +1,4 @@
+use crate::postgres::TableName;
 use secrecy::{ExposeSecret, Secret};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use sqlx::PgPool;
@@ -21,11 +22,11 @@ pub struct PostgresStorageConfig {
     pub port: u16,
     pub database_name: String,
     #[serde(default = "PostgresStorageConfig::default_event_journal_table")]
-    pub event_journal_table_name: String,
+    pub event_journal_table_name: TableName,
     #[serde(default = "PostgresStorageConfig::default_projection_offsets_table")]
-    pub projection_offsets_table_name: String,
+    pub projection_offsets_table_name: TableName,
     #[serde(default = "PostgresStorageConfig::default_snapshot_table")]
-    pub snapshot_table_name: String,
+    pub snapshot_table_name: TableName,
     pub require_ssl: bool,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -45,14 +46,14 @@ pub struct PostgresStorageConfig {
 }
 
 impl PostgresStorageConfig {
-    pub fn default_event_journal_table() -> String {
-        "event_journal".to_string()
+    pub fn default_event_journal_table() -> TableName {
+        TableName::new("event_journal").unwrap()
     }
-    pub fn default_projection_offsets_table() -> String {
-        "projection_offset".to_string()
+    pub fn default_projection_offsets_table() -> TableName {
+        TableName::new("projection_offset").unwrap()
     }
-    pub fn default_snapshot_table() -> String {
-        "snapshots".to_string()
+    pub fn default_snapshot_table() -> TableName {
+        TableName::new("snapshots").unwrap()
     }
 
     #[allow(dead_code)]

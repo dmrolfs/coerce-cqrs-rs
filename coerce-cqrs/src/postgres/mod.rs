@@ -8,66 +8,107 @@ mod projection_storage;
 mod sql_query;
 
 pub use config::PostgresStorageConfig;
-// pub use offset::PostgresOffsetStorage;
 pub use projection_storage::PostgresProjectionStorage;
 pub use provider::{PostgresJournalStorage, PostgresStorageProvider};
 
 use crate::projection::PersistenceId;
 use anyhow::anyhow;
-use smol_str::SmolStr;
+use nutype::nutype;
 use sqlx::database::{HasArguments, HasValueRef};
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
-use std::fmt;
 use std::fmt::Debug;
 use std::str::FromStr;
 use strum_macros::{Display, EnumString, EnumVariantNames, IntoStaticStr};
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub(in crate::postgres) struct StorageKey(SmolStr);
+#[nutype(
+    sanitize(trim, lowercase)
+    validate(not_empty)
+)]
+#[derive(
+    Debug,
+    Clone,
+    Deref,
+    Borrow,
+    FromStr,
+    Into,
+    TryFrom,
+    AsRef,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+pub struct TableName(String);
 
-impl fmt::Display for StorageKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+impl std::fmt::Display for TableName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
     }
 }
 
-impl StorageKey {
-    pub fn new(id: impl AsRef<str>) -> Self {
-        Self(SmolStr::new(id.as_ref()))
+#[nutype(
+    sanitize(trim, lowercase)
+    validate(not_empty)
+)]
+#[derive(
+    Debug,
+    Clone,
+    Deref,
+    Borrow,
+    FromStr,
+    TryFrom,
+    AsRef,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+pub struct TableColumn(String);
+
+impl std::fmt::Display for TableColumn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
     }
 }
 
+#[nutype(
+    sanitize(trim)
+    validate(not_empty)
+)]
+#[derive(
+    Debug,
+    Clone,
+    FromStr,
+    TryFrom,
+    AsRef,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+pub(in crate::postgres) struct StorageKey(String);
+
+impl std::fmt::Display for StorageKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
+    }
+}
+
+#[allow(clippy::fallible_impl_from)]
 impl From<PersistenceId> for StorageKey {
     fn from(pid: PersistenceId) -> Self {
-        Self(pid.to_string().into())
-    }
-}
-
-impl From<String> for StorageKey {
-    fn from(id: String) -> Self {
-        Self::new(id)
-    }
-}
-
-impl From<&str> for StorageKey {
-    fn from(id: &str) -> Self {
-        Self::new(id)
-    }
-}
-
-impl From<SmolStr> for StorageKey {
-    fn from(id: SmolStr) -> Self {
-        Self::new(id.as_str())
-    }
-}
-
-impl AsRef<str> for StorageKey {
-    fn as_ref(&self) -> &str {
-        self.0.as_str()
+        Self::new(pid.to_string()).unwrap()
     }
 }
 
@@ -94,7 +135,7 @@ where
         value: <DB as sqlx::database::HasValueRef<'r>>::ValueRef,
     ) -> Result<Self, sqlx::error::BoxDynError> {
         let id = <&str as sqlx::Decode<DB>>::decode(value)?;
-        Ok(Self::new(id))
+        Self::new(id).map_err(|err| err.into())
     }
 }
 
@@ -104,7 +145,7 @@ where
     String: sqlx::Encode<'r, DB>,
 {
     fn encode_by_ref(&self, buf: &mut <DB as HasArguments<'r>>::ArgumentBuffer) -> IsNull {
-        <String as sqlx::Encode<'r, DB>>::encode(self.0.to_string(), buf)
+        <String as sqlx::Encode<'r, DB>>::encode(self.to_string(), buf)
     }
 }
 
@@ -133,15 +174,6 @@ where
         Ok(persistence_id)
     }
 }
-
-// impl From<StorageKey> for PersistenceId {
-//     fn from(key: StorageKey) -> Self {
-//         let mut parts = key.as_ref().split(PERSISTENCE_ID_DELIMITER);
-//         let aggregate_name = SmolStr::new(parts.next().expect("aggregate name and id"));
-//         let id = SmolStr::new(parts.next().expect("aggregate id"));
-//         Self { aggregate_name, id }
-//     }
-// }
 
 #[derive(
     Debug, Copy, Clone, PartialEq, Eq, Hash, Display, IntoStaticStr, EnumString, EnumVariantNames,
@@ -227,8 +259,12 @@ impl StorageKeyCodec for SimpleStorageKeyCodec {
 
     fn key_from_parts(&self, persistence_id: &str, entry_type: &str) -> StorageKey {
         self.key_prefix.as_ref().map_or_else(
-            || format!("{persistence_id}:{entry_type}").into(),
-            |key_prefix| format!("{key_prefix}:{persistence_id}:{entry_type}").into(),
+            || format!("{persistence_id}:{entry_type}").try_into().unwrap(),
+            |key_prefix| {
+                format!("{key_prefix}:{persistence_id}:{entry_type}")
+                    .try_into()
+                    .unwrap()
+            },
         )
     }
 }
