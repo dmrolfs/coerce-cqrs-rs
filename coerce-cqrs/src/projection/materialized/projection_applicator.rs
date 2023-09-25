@@ -41,23 +41,32 @@ where
 impl<P, E, A> ProcessEntry for ProjectionApplicator<P, E, A>
 where
     P: Debug,
-    E: Message,
+    E: Message + Debug,
     A: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
 {
     type Projection = P;
 
-    #[instrument(level = "debug", skip(self, entry, ctx))]
+    #[instrument(
+        level = "debug",
+        skip(self, entry, ctx),
+        fields(projection_name=%ctx.projection_name, persistence_id=%ctx.persistence_id())
+    )]
     fn apply_entry_to_projection(
         &self,
         projection: &Self::Projection,
         entry: JournalEntry,
         ctx: &ProcessorContext,
     ) -> ProcessResult<Self::Projection, ProjectionError> {
-        let event = match Self::from_bytes(entry) {
-            Ok(evt) => evt,
-            Err(error) => return ProcessResult::Err(error.into()),
-        };
+        match Self::from_bytes(entry) {
+            Ok(event) => {
+                info!(?event, ?projection, "processing event entry...");
+                (self.applicator)(ctx.persistence_id(), projection, event)
+            },
 
-        (self.applicator)(ctx.persistence_id(), projection, event)
+            Err(error) => {
+                info!(?error, "failed to deserialize entry - skipping processing.");
+                ProcessResult::Unchanged
+            },
+        }
     }
 }
