@@ -9,6 +9,7 @@ use coerce::persistent::{
     ActorRecovery, PersistErr, PersistFailurePolicy, PersistentActor, ReadMessages, Recover,
     RecoverSnapshot, Recovery, RecoveryErr, RecoveryFailurePolicy, Retry,
 };
+use coerce_cqrs::Aggregate;
 use std::sync::Arc;
 use tagid::{CuidGenerator, Entity, Label};
 
@@ -28,13 +29,15 @@ pub struct Msg(pub i32);
 #[derive(Debug, JsonSnapshot, Serialize, Deserialize)]
 pub struct TestActorSnapshot {}
 
+impl Aggregate for TestActor {}
+
 #[async_trait]
 impl PersistentActor for TestActor {
     #[instrument(level = "info", skip(journal))]
     fn configure(journal: &mut JournalTypes<Self>) {
         journal
-            .snapshot::<TestActorSnapshot>("tests-snapshot")
-            .message::<Msg>("tests-message");
+            .snapshot::<TestActorSnapshot>(Self::journal_snapshot_type_identifier())
+            .message::<Msg>(Self::journal_message_type_identifier());
     }
 
     #[instrument(level = "info", skip(_ctx))]

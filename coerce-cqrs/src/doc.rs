@@ -1,4 +1,4 @@
-use crate::{AggregateState, CommandResult};
+use crate::{Aggregate, AggregateState, CommandResult};
 use coerce::actor::context::ActorContext;
 use coerce::actor::message::Handler;
 use coerce::persistent::journal::types::JournalTypes;
@@ -27,10 +27,12 @@ impl Entity for MyAggregate {
     type IdGen = CuidGenerator;
 }
 
+impl Aggregate for MyAggregate {}
+
 #[async_trait]
 impl PersistentActor for MyAggregate {
     fn configure(journal: &mut JournalTypes<Self>) {
-        journal.message::<MyEvent>("my-aggregate-event");
+        journal.message::<MyEvent>(Self::journal_message_type_identifier());
     }
 }
 

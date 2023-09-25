@@ -25,7 +25,7 @@ mod aggregate;
 pub mod postgres;
 pub mod projection;
 
-pub use aggregate::{AggregateError, AggregateState, CommandResult, SnapshotTrigger};
+pub use aggregate::{Aggregate, AggregateError, AggregateState, CommandResult, SnapshotTrigger};
 
 //todo: remove once crate persistent & projection parts fully tested
 pub mod memory;

@@ -6,8 +6,32 @@ pub use snapshot_trigger::SnapshotTrigger;
 
 use coerce::actor::context::ActorContext;
 use coerce::actor::message::Message;
+use coerce::persistent::PersistentActor;
+use once_cell::sync::OnceCell;
 use std::fmt::Debug;
 use thiserror::Error;
+
+pub trait Aggregate: PersistentActor {
+    fn journal_message_type_identifier() -> &'static str {
+        use heck::ToKebabCase;
+
+        static MESSAGE_TYPE: OnceCell<String> = OnceCell::new();
+        MESSAGE_TYPE.get_or_init(|| {
+            let my_name = std::any::type_name::<Self>();
+            format!("{}-event", my_name.to_kebab_case())
+        })
+    }
+
+    fn journal_snapshot_type_identifier() -> &'static str {
+        use heck::ToKebabCase;
+
+        static SNAPSHOT_TYPE: OnceCell<String> = OnceCell::new();
+        SNAPSHOT_TYPE.get_or_init(|| {
+            let my_name = std::any::type_name::<Self>();
+            format!("{}-snapshot", my_name.to_kebab_case())
+        })
+    }
+}
 
 pub trait AggregateState<C, E>
 where

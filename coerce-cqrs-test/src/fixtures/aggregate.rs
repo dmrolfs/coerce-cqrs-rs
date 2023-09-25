@@ -5,7 +5,7 @@ use coerce::persistent::types::JournalTypes;
 use coerce::persistent::{PersistErr, PersistentActor, Recover, RecoverSnapshot};
 use coerce_cqrs::projection::processor::ProcessResult;
 use coerce_cqrs::projection::{PersistenceId, ProjectionError};
-use coerce_cqrs::{AggregateError, AggregateState, CommandResult};
+use coerce_cqrs::{Aggregate, AggregateError, AggregateState, CommandResult};
 use std::fmt;
 use std::marker::PhantomData;
 use tagid::{CuidGenerator, Entity, Label};
@@ -197,13 +197,15 @@ impl Summarizable for TestAggregate {
     }
 }
 
+impl Aggregate for TestAggregate {}
+
 #[async_trait]
 impl PersistentActor for TestAggregate {
     #[instrument(level = "info", skip(journal))]
     fn configure(journal: &mut JournalTypes<Self>) {
         journal
-            .snapshot::<TestAggregateSnapshot>("tests-aggregate-snapshot")
-            .message::<TestEvent>("tests-aggregate-event");
+            .snapshot::<TestAggregateSnapshot>(Self::journal_snapshot_type_identifier())
+            .message::<TestEvent>(Self::journal_message_type_identifier());
     }
 }
 
@@ -552,7 +554,7 @@ mod tests {
             TestFramework::<TestAggregate, _>::default()
                 .with_memory_storage()
                 .given(
-                    "tests-aggregate-event",
+                    TestAggregate::journal_message_type_identifier(),
                     vec![
                         TestEvent::Started(DESCRIPTION.to_string()),
                         TestEvent::Tested(1),
@@ -578,7 +580,7 @@ mod tests {
             TestFramework::<TestAggregate, _>::default()
                 .with_memory_storage()
                 .given(
-                    "tests-aggregate-event",
+                    TestAggregate::journal_message_type_identifier(),
                     vec![
                         TestEvent::Started(DESCRIPTION.to_string()),
                         TestEvent::Tested(1),
