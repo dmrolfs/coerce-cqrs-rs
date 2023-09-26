@@ -25,7 +25,18 @@ fn type_identifier<A: PersistentActor, T>(suffix: &str) -> String {
     use heck::ToKebabCase;
     let actor_name = tynm::type_name::<A>().to_kebab_case();
     let type_name = tynm::type_name::<T>().to_kebab_case();
-    format!("{actor_name}-{type_name}-{suffix}")
+
+    let front = if type_name.starts_with(&actor_name) {
+        type_name.clone()
+    } else {
+        format!("{actor_name}-{type_name}")
+    };
+
+    if type_name.ends_with(&suffix) {
+        front
+    } else {
+        format!("{front}-{suffix}")
+    }
 }
 
 pub trait Aggregate: PersistentActor {
