@@ -189,8 +189,9 @@ impl JournalStorage for InMemoryJournalStorage {
         &self,
         persistence_id: &str,
     ) -> anyhow::Result<Option<JournalEntry>> {
-        let store = self.store.read();
-        let entry = store
+        let entry = self
+            .store
+            .read()
             .get(persistence_id)
             .and_then(|j| j.snapshots.last().cloned());
         Ok(entry)

@@ -254,12 +254,20 @@ impl SqlQueryFactory {
 
             let select_sql = match entry_types {
                 EntryPayloadTypes::All => select_sql,
-                EntryPayloadTypes::Set(pts) => {
+                EntryPayloadTypes::Set(known_types) => {
                     let known_entry_types = format!(
-                        "event_manifest LIKE ({})",
-                        pts.iter().map(|e| format!("'{e}'")).join(",")
+                        "{event_manifest} LIKE ({k_types})",
+                        event_manifest = self.event_manifest_column(),
+                        k_types = known_types.iter().map(|e| format!("'{e}'")).join(",")
                     );
                     select_sql.where_clause(&known_entry_types)
+                }
+                EntryPayloadTypes::Single(known_type) => {
+                    let known_clause = format!(
+                        "{event_manifest} = '{known_type}'",
+                        event_manifest = self.event_manifest_column()
+                    );
+                    select_sql.where_clause(&known_clause)
                 }
             };
 

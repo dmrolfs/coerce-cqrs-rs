@@ -182,6 +182,7 @@ pub trait ProcessEntry {
 pub enum EntryPayloadTypes {
     All,
     Set(HashSet<String>),
+    Single(String),
 }
 
 impl EntryPayloadTypes {
@@ -189,15 +190,20 @@ impl EntryPayloadTypes {
         Self::All
     }
 
-    pub fn set(payload_types: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        let pts = payload_types.into_iter().map(|rep| rep.into()).collect();
+    pub fn set(entry_types: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        let pts = entry_types.into_iter().map(|rep| rep.into()).collect();
         Self::Set(pts)
     }
 
-    pub fn is_known(&self, payload_type: &str) -> bool {
+    pub fn single(entry_type: impl Into<String>) -> Self {
+        Self::Single(entry_type.into())
+    }
+
+    pub fn is_known(&self, entry_type: &str) -> bool {
         match self {
             Self::All => true,
-            Self::Set(pts) => pts.contains(payload_type),
+            Self::Set(known_types) => known_types.contains(entry_type),
+            Self::Single(known_type) => known_type == entry_type,
         }
     }
 }
