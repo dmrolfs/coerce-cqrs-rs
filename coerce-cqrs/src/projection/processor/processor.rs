@@ -1,5 +1,5 @@
 use crate::projection::processor::interval::CalculateInterval;
-use crate::projection::processor::{Building, ProcessEntry, ProcessorEngine};
+use crate::projection::processor::{Building, EntryPayloadTypes, ProcessEntry, ProcessorEngine};
 use crate::projection::{Offset, PersistenceId};
 use coerce::actor::system::ActorSystem;
 use coerce::persistent::journal::storage::JournalEntry;
@@ -70,7 +70,10 @@ pub type AggregateOffsets = HashMap<PersistenceId, Offset>;
 
 #[async_trait]
 pub trait ProcessorSource: JournalStorage {
-    async fn read_persistence_ids(&self) -> anyhow::Result<Vec<PersistenceId>>;
+    async fn read_persistence_ids(
+        &self,
+        entry_types: EntryPayloadTypes,
+    ) -> anyhow::Result<Vec<PersistenceId>>;
 
     async fn read_bulk_latest_messages(
         &self,

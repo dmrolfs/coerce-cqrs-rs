@@ -16,11 +16,11 @@ use std::sync::Arc;
 pub(in crate::postgres) mod protocol {
     use super::*;
     use crate::postgres::{PostgresStorageError, StorageKey};
-    use crate::projection::processor::{AggregateEntries, AggregateSequences};
+    use crate::projection::processor::{AggregateEntries, AggregateSequences, EntryPayloadTypes};
     use std::fmt;
 
     #[derive(Debug)]
-    pub struct FindAllPersistenceIds;
+    pub struct FindAllPersistenceIds(pub EntryPayloadTypes);
 
     impl Message for FindAllPersistenceIds {
         type Result = Result<Vec<PersistenceId>, PostgresStorageError>;
@@ -320,17 +320,18 @@ impl Handler<FindAllPersistenceIds> for PostgresJournal {
     #[instrument(level = "debug", skip(ctx), fields(ctx=ctx.log().as_value()))]
     async fn handle(
         &mut self,
-        _message: FindAllPersistenceIds,
+        message: FindAllPersistenceIds,
         ctx: &mut ActorContext,
     ) -> <FindAllPersistenceIds as Message>::Result {
         let persistence_id_column = self.sql_query.persistence_id_column().as_str();
-        let keys: Result<Vec<StorageKey>, PostgresStorageError> =
-            sqlx::query(self.sql_query.select_persistence_ids())
-                .map(|row: PgRow| row.get(persistence_id_column))
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|err| err.into());
-        debug!("DMR: persistence keys: {keys:?}");
+
+        let query_sql = self.sql_query.select_persistence_ids(&message.0);
+        let keys: Result<Vec<StorageKey>, PostgresStorageError> = sqlx::query(query_sql)
+            .map(|row: PgRow| row.get(persistence_id_column))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| err.into());
+        debug!(known_entry_types=?message.0, "DMR: persistence keys: {keys:?}");
 
         keys?
             .into_iter()

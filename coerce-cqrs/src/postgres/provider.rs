@@ -5,8 +5,8 @@ use crate::postgres::{
     EntryType, PostgresStorageError, SimpleStorageKeyCodec, StorageKey, StorageKeyCodec,
 };
 use crate::projection::processor::{
-    AggregateEntries, AggregateSequences, ProcessorSource, ProcessorSourceProvider,
-    ProcessorSourceRef,
+    AggregateEntries, AggregateSequences, EntryPayloadTypes, ProcessorSource,
+    ProcessorSourceProvider, ProcessorSourceRef,
 };
 use crate::projection::PersistenceId;
 use anyhow::Context;
@@ -109,9 +109,12 @@ impl PostgresJournalStorage {
 #[async_trait]
 impl ProcessorSource for PostgresJournalStorage {
     #[instrument(level = "debug", skip())]
-    async fn read_persistence_ids(&self) -> anyhow::Result<Vec<PersistenceId>> {
+    async fn read_persistence_ids(
+        &self,
+        entry_types: EntryPayloadTypes,
+    ) -> anyhow::Result<Vec<PersistenceId>> {
         self.postgres_journal
-            .send(protocol::FindAllPersistenceIds)
+            .send(protocol::FindAllPersistenceIds(entry_types))
             .await?
             .context("failed loading all persistence_ids")
     }

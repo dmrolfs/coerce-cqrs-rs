@@ -1,6 +1,6 @@
 use crate::projection::processor::{
-    AggregateEntries, AggregateSequences, ProcessorSource, ProcessorSourceProvider,
-    ProcessorSourceRef,
+    AggregateEntries, AggregateSequences, EntryPayloadTypes, ProcessorSource,
+    ProcessorSourceProvider, ProcessorSourceRef,
 };
 use crate::projection::PersistenceId;
 use anyhow::Context;
@@ -24,20 +24,11 @@ pub struct InMemoryStorageProvider {
 
 impl Default for InMemoryStorageProvider {
     fn default() -> Self {
-        // let storage_key_codec = Arc::new(SimpleStorageKeyCodec::default());
         Self {
             store: Arc::new(InMemoryJournalStorage::default()), //storage_key_codec)),
         }
     }
 }
-// #[allow(dead_code)]
-// impl InMemoryStorageProvider {
-//     pub fn new() -> Self {
-//         Self {
-//             store: Arc::new(InMemoryJournalStorage::new(offset_storage)),
-//         }
-//     }
-// }
 
 impl StorageProvider for InMemoryStorageProvider {
     fn journal_storage(&self) -> Option<JournalStorageRef> {
@@ -83,42 +74,31 @@ impl ActorJournal {
 #[derive(Debug, Default)]
 pub struct InMemoryJournalStorage {
     store: RwLock<HashMap<String, ActorJournal>>,
-    // storage_key_codec: Arc<dyn StorageKeyCodec>,
 }
-
-// impl Default for InMemoryJournalStorage {
-//     fn default() -> Self {
-//         Self {
-//             store: Default::default(),
-//             // storage_key_codec: Arc::new(SimpleStorageKeyCodec::default()),
-//         }
-//     }
-// }
-
-// impl InMemoryJournalStorage {
-//     // pub fn new(storage_key_codec: Arc<dyn StorageKeyCodec>) -> Self {
-//     pub fn new() -> Self {
-//         Self {
-//             store: Default::default(),
-//             // storage_key_codec,
-//         }
-//     }
-// }
 
 #[async_trait]
 impl ProcessorSource for InMemoryJournalStorage {
-    // async fn read_storage_keys(&self) -> anyhow::Result<Vec<StorageKey>> {
-    //     let store = self.store.read();
-    //     Ok(store.keys().cloned().map(StorageKey::new).collect())
-    // }
-
-    async fn read_persistence_ids(&self) -> anyhow::Result<Vec<PersistenceId>> {
+    async fn read_persistence_ids(
+        &self,
+        entry_types: EntryPayloadTypes,
+    ) -> anyhow::Result<Vec<PersistenceId>> {
         let store = self.store.read();
         store
-            .keys()
-            .map(|k| {
-                PersistenceId::from_str(k.as_str())
-                    .with_context(|| format!("failed to parse postgres persistence_id from {k}"))
+            .iter()
+            .filter_map(|(pid_rep, actor_journal)| {
+                let known_entry = actor_journal
+                    .messages
+                    .iter()
+                    .any(|entry| entry_types.is_known(&entry.payload_type));
+                if known_entry {
+                    Some(
+                        PersistenceId::from_str(pid_rep.as_str()).with_context(|| {
+                            format!("failed to parse persistence_id from {pid_rep}")
+                        }),
+                    )
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -137,12 +117,6 @@ impl ProcessorSource for InMemoryJournalStorage {
             debug!("{persistence_id}[{sequence:?}] latest messages: {latest_entries:?}");
 
             if let Some(entries) = latest_entries {
-                // debug!("DMR - AAA");
-                // let key_parts = self.storage_key_codec.key_into_parts(persistence_id.clone());
-                // debug!("DMR(temp): persistence_id of {storage_key} = {key_parts:?}");
-                // let persistence_id = key_parts?.1;
-
-                // let (_, persistence_id, _) = self.storage_key_codec.key_into_parts(storage_key.clone())?;
                 result.insert(persistence_id, entries);
             }
         }
@@ -216,10 +190,10 @@ impl JournalStorage for InMemoryJournalStorage {
         persistence_id: &str,
     ) -> anyhow::Result<Option<JournalEntry>> {
         let store = self.store.read();
-
-        Ok(store
+        let entry = store
             .get(persistence_id)
-            .and_then(|j| j.snapshots.last().cloned()))
+            .and_then(|j| j.snapshots.last().cloned());
+        Ok(entry)
     }
 
     #[instrument(level = "debug")]

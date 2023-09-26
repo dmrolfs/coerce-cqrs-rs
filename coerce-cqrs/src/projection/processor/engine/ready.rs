@@ -2,9 +2,9 @@ use crate::projection::materialized::ProjectionStorageRef;
 use crate::projection::processor::engine::running::Running;
 use crate::projection::processor::processor::protocol;
 use crate::projection::processor::{
-    AggregateEntries, AggregateSequences, CalculateInterval, ProcessEntry, ProcessResult,
-    ProcessorApi, ProcessorContext, ProcessorEngine, ProcessorLifecycle, ProcessorSource,
-    ProcessorSourceRef,
+    AggregateEntries, AggregateSequences, CalculateInterval, EntryPayloadTypes, ProcessEntry,
+    ProcessResult, ProcessorApi, ProcessorContext, ProcessorEngine, ProcessorLifecycle,
+    ProcessorSource, ProcessorSourceRef,
 };
 use crate::projection::{Offset, PersistenceId, ProjectionError};
 use coerce::actor::system::ActorSystem;
@@ -67,6 +67,7 @@ where
         let tx_api = self.tx_api();
 
         let projection_name = self.inner.projection_name.clone();
+        let known_entry_types = self.inner.entry_handler.known_entry_types().clone();
         let system = self.inner.system.clone();
         let source = self.inner.source.clone();
         let projection_storage = self.inner.projection_storage.clone();
@@ -87,7 +88,7 @@ where
                     //     break;
                     // },
 
-                    latest = Self::read_all_latest_messages(&projection_name, source.clone(), projection_storage.clone()) => {
+                    latest = Self::read_all_latest_messages(&projection_name, &known_entry_types, source.clone(), projection_storage.clone()) => {
                         match latest {
                             Ok(l) => { context = self.do_handle_latest_entries(l, context).await?; },
 
@@ -122,6 +123,7 @@ where
     #[instrument(level = "debug", skip(source, projection_storage))]
     async fn read_all_latest_messages(
         projection_name: &str,
+        known_entry_types: &EntryPayloadTypes,
         source: Arc<dyn ProcessorSource>,
         projection_storage: ProjectionStorageRef<VID, P>,
     ) -> anyhow::Result<Option<AggregateEntries>> {
@@ -137,7 +139,7 @@ where
         debug!("DMR: offsets: {offsets:?}");
 
         let mut sequences: AggregateSequences = source
-            .read_persistence_ids()
+            .read_persistence_ids(known_entry_types.clone())
             .await?
             .into_iter()
             .map(|key| (key, None))
@@ -306,7 +308,7 @@ where
             if !self
                 .inner
                 .entry_handler
-                .knows_payload_type(&entry.payload_type)
+                .knows_entry_type(&entry.payload_type)
             {
                 debug!(payload_type=%entry.payload_type, "unknown payload type -- skipping");
                 continue;

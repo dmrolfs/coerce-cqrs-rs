@@ -1,4 +1,6 @@
 use crate::postgres::{TableColumn, TableName};
+use crate::projection::processor::EntryPayloadTypes;
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use once_cell::sync::OnceCell;
 use sql_query_builder as sql;
@@ -244,12 +246,24 @@ impl SqlQueryFactory {
     }
 
     #[inline]
-    pub fn select_persistence_ids(&self) -> &str {
+    pub fn select_persistence_ids(&self, entry_types: &EntryPayloadTypes) -> &str {
         self.select_persistence_ids.get_or_init(|| {
-            sql::Select::new()
+            let select_sql = sql::Select::new()
                 .select(format!("DISTINCT {}", self.persistence_id_column()).as_str())
-                .from(self.event_journal_table())
-                .to_string()
+                .from(self.event_journal_table());
+
+            let select_sql = match entry_types {
+                EntryPayloadTypes::All => select_sql,
+                EntryPayloadTypes::Set(pts) => {
+                    let known_entry_types = format!(
+                        "event_manifest LIKE ({})",
+                        pts.iter().map(|e| format!("'{e}'")).join(",")
+                    );
+                    select_sql.where_clause(&known_entry_types)
+                }
+            };
+
+            select_sql.to_string()
         })
     }
 

@@ -15,6 +15,7 @@ pub use processor::{
     AggregateEntries, AggregateOffsets, AggregateSequences, Processor, ProcessorContext,
     ProcessorError, ProcessorSource, ProcessorSourceProvider, ProcessorSourceRef,
 };
+use std::collections::HashSet;
 
 use crate::projection::ProjectionError;
 use coerce::actor::message::{Message, MessageUnwrapErr};
@@ -158,7 +159,11 @@ impl<P, E: Debug> ProcessResult<P, E> {
 pub trait ProcessEntry {
     type Projection;
 
-    fn knows_payload_type(&self, payload_type: &str) -> bool;
+    fn known_entry_types(&self) -> &EntryPayloadTypes;
+
+    fn knows_entry_type(&self, payload_type_identifier: &str) -> bool {
+        self.known_entry_types().is_known(payload_type_identifier)
+    }
 
     #[inline]
     fn from_bytes<E: Message>(entry: JournalEntry) -> Result<E, MessageUnwrapErr> {
@@ -171,4 +176,28 @@ pub trait ProcessEntry {
         entry: JournalEntry,
         ctx: &ProcessorContext,
     ) -> ProcessResult<Self::Projection, ProjectionError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EntryPayloadTypes {
+    All,
+    Set(HashSet<String>),
+}
+
+impl EntryPayloadTypes {
+    pub const fn all() -> Self {
+        Self::All
+    }
+
+    pub fn set(payload_types: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        let pts = payload_types.into_iter().map(|rep| rep.into()).collect();
+        Self::Set(pts)
+    }
+
+    pub fn is_known(&self, payload_type: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Set(pts) => pts.contains(payload_type),
+        }
+    }
 }

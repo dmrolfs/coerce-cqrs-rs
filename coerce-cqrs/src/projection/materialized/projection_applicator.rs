@@ -1,4 +1,6 @@
-use crate::projection::processor::{ProcessEntry, ProcessResult, ProcessorContext};
+use crate::projection::processor::{
+    EntryPayloadTypes, ProcessEntry, ProcessResult, ProcessorContext,
+};
 use crate::projection::{PersistenceId, ProjectionError};
 use coerce::actor::message::Message;
 use coerce::persistent::storage::JournalEntry;
@@ -13,7 +15,7 @@ where
     F: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
 {
     applicator: F,
-    known_payload_type: String,
+    known_payload_types: EntryPayloadTypes,
     #[allow(clippy::type_complexity)]
     _marker: PhantomData<fn() -> (A, P, E)>,
 }
@@ -26,7 +28,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProjectionApplicator")
-            .field("known_payload_type", &self.known_payload_type)
+            .field("known_payload_types", &self.known_payload_types)
             .finish()
     }
 }
@@ -40,7 +42,9 @@ where
     pub fn new(applicator: F) -> Self {
         Self {
             applicator,
-            known_payload_type: crate::aggregate::event_type_identifier::<A, E>(),
+            known_payload_types: EntryPayloadTypes::set([
+                crate::aggregate::event_type_identifier::<A, E>(),
+            ]),
             _marker: PhantomData,
         }
     }
@@ -56,8 +60,8 @@ where
 {
     type Projection = P;
 
-    fn knows_payload_type(&self, payload_type: &str) -> bool {
-        self.known_payload_type == payload_type
+    fn known_entry_types(&self) -> &EntryPayloadTypes {
+        &self.known_payload_types
     }
 
     #[instrument(
