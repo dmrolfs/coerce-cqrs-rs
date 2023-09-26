@@ -343,16 +343,18 @@ where
 
             last_offset = Some(Offset::new(offset_sequence));
         }
-        let last_offset = last_offset.unwrap();
 
-        let updated_projection = if any_update { Some(projection) } else { None };
+        if let Some(last_offset) = last_offset {
+            let updated_projection = if any_update { Some(projection) } else { None };
 
-        debug!(?last_offset, "DMR: applied to projection pulled entries for {persistence_id} => {updated_projection:?}", persistence_id=ctx.persistence_id());
+            debug!(?last_offset, "DMR: applied to projection pulled entries for {persistence_id} => {updated_projection:?}", persistence_id=ctx.persistence_id());
 
-        self.inner
-            .projection_storage
-            .save_projection(&ctx.view_id(), updated_projection, last_offset)
-            .await?;
+            self.inner
+                .projection_storage
+                .save_projection(&ctx.view_id(), updated_projection, last_offset)
+                .await?;
+        }
+
         Ok(())
     }
 }
