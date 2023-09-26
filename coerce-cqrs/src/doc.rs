@@ -32,7 +32,7 @@ impl Aggregate for MyAggregate {}
 #[async_trait]
 impl PersistentActor for MyAggregate {
     fn configure(journal: &mut JournalTypes<Self>) {
-        journal.message::<MyEvent>(Self::journal_message_type_identifier());
+        journal.message::<MyEvent>(&Self::journal_message_type_identifier::<MyEvent>());
     }
 }
 

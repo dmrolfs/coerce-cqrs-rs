@@ -28,7 +28,7 @@ async fn test_memory_processor_config() -> anyhow::Result<()> {
     let view_storage = Arc::new(InMemoryProjectionStorage::<TestView>::new(
         "test_load_and_save",
     ));
-    let view_apply = ProjectionApplicator::new(aggregate::apply_test_event_to_view);
+    let view_apply = ProjectionApplicator::new::<TestAggregate>(aggregate::apply_test_event_to_view);
     let storage_provider = InMemoryStorageProvider::default();
     let storage = storage_provider
         .processor_source()

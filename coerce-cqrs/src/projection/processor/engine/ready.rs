@@ -303,6 +303,15 @@ where
         for entry in entries {
             let offset_sequence = entry.sequence;
 
+            if !self
+                .inner
+                .entry_handler
+                .knows_payload_type(&entry.payload_type)
+            {
+                debug!(payload_type=%entry.payload_type, "unknown payload type -- skipping");
+                continue;
+            }
+
             let projection_result =
                 self.inner
                     .entry_handler

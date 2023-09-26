@@ -57,7 +57,7 @@ async fn test_postgres_recover_snapshot() -> anyhow::Result<()> {
         .await
     );
     let view_storage = Arc::new(view_storage);
-    let view_apply = ProjectionApplicator::new(aggregate::apply_test_event_to_view);
+    let view_apply = ProjectionApplicator::new::<TestAggregate>(aggregate::apply_test_event_to_view);
     let journal_storage_provider =
         PostgresStorageProvider::connect(storage_config.clone(), &system).await?;
     let storage = journal_storage_provider

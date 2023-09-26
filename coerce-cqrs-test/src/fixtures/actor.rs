@@ -36,8 +36,10 @@ impl PersistentActor for TestActor {
     #[instrument(level = "info", skip(journal))]
     fn configure(journal: &mut JournalTypes<Self>) {
         journal
-            .snapshot::<TestActorSnapshot>(Self::journal_snapshot_type_identifier())
-            .message::<Msg>(Self::journal_message_type_identifier());
+            .snapshot::<TestActorSnapshot>(&Self::journal_snapshot_type_identifier::<
+                TestActorSnapshot,
+            >())
+            .message::<Msg>(&Self::journal_message_type_identifier::<Msg>());
     }
 
     #[instrument(level = "info", skip(_ctx))]

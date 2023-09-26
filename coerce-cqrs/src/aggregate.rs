@@ -7,29 +7,34 @@ pub use snapshot_trigger::SnapshotTrigger;
 use coerce::actor::context::ActorContext;
 use coerce::actor::message::Message;
 use coerce::persistent::PersistentActor;
-use once_cell::sync::OnceCell;
 use std::fmt::Debug;
 use thiserror::Error;
 
-pub trait Aggregate: PersistentActor {
-    fn journal_message_type_identifier() -> &'static str {
-        use heck::ToKebabCase;
+#[inline]
+pub fn event_type_identifier<A: PersistentActor, E>() -> String {
+    type_identifier::<A, E>("event")
+}
 
-        static MESSAGE_TYPE: OnceCell<String> = OnceCell::new();
-        MESSAGE_TYPE.get_or_init(|| {
-            let my_name = std::any::type_name::<Self>();
-            format!("{}-event", my_name.to_kebab_case())
-        })
+#[inline]
+pub fn snapshot_type_identifier<A: PersistentActor, S>() -> String {
+    type_identifier::<A, S>("snapshot")
+}
+
+#[inline]
+fn type_identifier<A: PersistentActor, T>(suffix: &str) -> String {
+    use heck::ToKebabCase;
+    let actor_name = tynm::type_name::<A>().to_kebab_case();
+    let type_name = tynm::type_name::<T>().to_kebab_case();
+    format!("{actor_name}-{type_name}-{suffix}")
+}
+
+pub trait Aggregate: PersistentActor {
+    fn journal_message_type_identifier<E>() -> String {
+        event_type_identifier::<Self, E>()
     }
 
-    fn journal_snapshot_type_identifier() -> &'static str {
-        use heck::ToKebabCase;
-
-        static SNAPSHOT_TYPE: OnceCell<String> = OnceCell::new();
-        SNAPSHOT_TYPE.get_or_init(|| {
-            let my_name = std::any::type_name::<Self>();
-            format!("{}-snapshot", my_name.to_kebab_case())
-        })
+    fn journal_snapshot_type_identifier<S>() -> String {
+        snapshot_type_identifier::<Self, S>()
     }
 }
 

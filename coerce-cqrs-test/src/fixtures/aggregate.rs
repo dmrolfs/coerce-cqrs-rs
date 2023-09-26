@@ -87,6 +87,7 @@ pub enum TestCommand {
     Stop,
 }
 
+use crate::fixtures::actor::TestActorSnapshot;
 use strum_macros::Display;
 
 #[derive(Debug, PartialEq, Eq, Display, Serialize, Deserialize)]
@@ -204,8 +205,10 @@ impl PersistentActor for TestAggregate {
     #[instrument(level = "info", skip(journal))]
     fn configure(journal: &mut JournalTypes<Self>) {
         journal
-            .snapshot::<TestAggregateSnapshot>(Self::journal_snapshot_type_identifier())
-            .message::<TestEvent>(Self::journal_message_type_identifier());
+            .snapshot::<TestAggregateSnapshot>(&Self::journal_snapshot_type_identifier::<
+                TestActorSnapshot,
+            >())
+            .message::<TestEvent>(&Self::journal_message_type_identifier::<TestEvent>());
     }
 }
 
@@ -554,7 +557,7 @@ mod tests {
             TestFramework::<TestAggregate, _>::default()
                 .with_memory_storage()
                 .given(
-                    TestAggregate::journal_message_type_identifier(),
+                    &TestAggregate::journal_message_type_identifier::<TestEvent>(),
                     vec![
                         TestEvent::Started(DESCRIPTION.to_string()),
                         TestEvent::Tested(1),
@@ -580,7 +583,7 @@ mod tests {
             TestFramework::<TestAggregate, _>::default()
                 .with_memory_storage()
                 .given(
-                    TestAggregate::journal_message_type_identifier(),
+                    &TestAggregate::journal_message_type_identifier::<TestEvent>(),
                     vec![
                         TestEvent::Started(DESCRIPTION.to_string()),
                         TestEvent::Tested(1),

@@ -158,6 +158,8 @@ impl<P, E: Debug> ProcessResult<P, E> {
 pub trait ProcessEntry {
     type Projection;
 
+    fn knows_payload_type(&self, payload_type: &str) -> bool;
+
     #[inline]
     fn from_bytes<E: Message>(entry: JournalEntry) -> Result<E, MessageUnwrapErr> {
         E::from_bytes(entry.bytes.to_vec())
