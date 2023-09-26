@@ -6,20 +6,23 @@ use coerce::persistent::PersistentActor;
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
 
-pub struct ProjectionApplicator<P, E, A>
+pub struct ProjectionApplicator<A, P, E, F>
 where
+    A: PersistentActor,
     E: Message,
-    A: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
+    F: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
 {
-    applicator: A,
+    applicator: F,
     known_payload_type: String,
-    _marker: PhantomData<fn() -> (P, E)>,
+    #[allow(clippy::type_complexity)]
+    _marker: PhantomData<fn() -> (A, P, E)>,
 }
 
-impl<P, E, A> Debug for ProjectionApplicator<P, E, A>
+impl<A, P, E, F> Debug for ProjectionApplicator<A, P, E, F>
 where
+    A: PersistentActor,
     E: Message,
-    A: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
+    F: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProjectionApplicator")
@@ -28,26 +31,28 @@ where
     }
 }
 
-impl<P, E, A> ProjectionApplicator<P, E, A>
+impl<A, P, E, F> ProjectionApplicator<A, P, E, F>
 where
+    A: PersistentActor,
     E: Message,
-    A: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
+    F: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
 {
-    pub fn new<Agg: PersistentActor>(applicator: A) -> Self {
+    pub fn new(applicator: F) -> Self {
         Self {
             applicator,
-            known_payload_type: crate::aggregate::event_type_identifier::<Agg, E>(),
+            known_payload_type: crate::aggregate::event_type_identifier::<A, E>(),
             _marker: PhantomData,
         }
     }
 }
 
 #[async_trait]
-impl<P, E, A> ProcessEntry for ProjectionApplicator<P, E, A>
+impl<A, P, E, F> ProcessEntry for ProjectionApplicator<A, P, E, F>
 where
+    A: PersistentActor,
     P: Debug,
     E: Message + Debug,
-    A: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
+    F: Fn(&PersistenceId, &P, E) -> ProcessResult<P, ProjectionError> + Send + Sync,
 {
     type Projection = P;
 

@@ -63,7 +63,8 @@ async fn test_postgres_processor_config() -> anyhow::Result<()> {
     assert_eq!(view_storage.name(), &projection_name);
 
     let view_storage = Arc::new(view_storage);
-    let view_apply = ProjectionApplicator::new::<TestAggregate>(aggregate::apply_test_event_to_view);
+    let view_apply =
+        ProjectionApplicator::<TestAggregate, _, _, _>::new(aggregate::apply_test_event_to_view);
     let storage_provider =
         PostgresStorageProvider::connect(storage_config.clone(), &system).await?;
     let storage = storage_provider
