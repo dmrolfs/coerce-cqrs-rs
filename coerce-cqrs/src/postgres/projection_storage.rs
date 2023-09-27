@@ -495,7 +495,7 @@ mod actor {
             debug!(
                 ?save_projection_result,
                 ?save_offset_result,
-                "DMR: save_projection query submitted."
+                "DMR: save projection and offset query submitted."
             );
 
             if let Err(error) = tx.commit().await {
