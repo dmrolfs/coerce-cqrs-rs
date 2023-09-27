@@ -15,11 +15,11 @@ pub use processor::{
     AggregateEntries, AggregateOffsets, AggregateSequences, Processor, ProcessorContext,
     ProcessorError, ProcessorSource, ProcessorSourceProvider, ProcessorSourceRef,
 };
-use std::collections::HashSet;
 
 use crate::projection::ProjectionError;
 use coerce::actor::message::{Message, MessageUnwrapErr};
 use coerce::persistent::journal::storage::JournalEntry;
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 use strum_macros::{Display, EnumString, EnumVariantNames, IntoStaticStr};
 
@@ -178,10 +178,10 @@ pub trait ProcessEntry {
     ) -> ProcessResult<Self::Projection, ProjectionError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EntryPayloadTypes {
     All,
-    Set(HashSet<String>),
+    Set(BTreeSet<String>),
     Single(String),
 }
 

@@ -323,11 +323,10 @@ impl Handler<FindAllPersistenceIds> for PostgresJournal {
         message: FindAllPersistenceIds,
         ctx: &mut ActorContext,
     ) -> <FindAllPersistenceIds as Message>::Result {
-        let persistence_id_column = self.sql_query.persistence_id_column().as_str();
-
-        let query_sql = self.sql_query.select_persistence_ids(&message.0);
-        let keys: Result<Vec<StorageKey>, PostgresStorageError> = sqlx::query(query_sql)
-            .map(|row: PgRow| row.get(persistence_id_column))
+        let persistence_id_column = self.sql_query.persistence_id_column().to_string();
+        let query_sql = self.sql_query.select_persistence_ids(&message.0); //.to_string();
+        let keys: Result<Vec<StorageKey>, PostgresStorageError> = sqlx::query(&query_sql)
+            .map(|row: PgRow| row.get(persistence_id_column.as_str()))
             .fetch_all(&self.pool)
             .await
             .map_err(|err| err.into());

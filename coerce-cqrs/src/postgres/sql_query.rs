@@ -5,7 +5,9 @@ use once_cell::sync::Lazy;
 use once_cell::sync::OnceCell;
 use sql_query_builder as sql;
 use std::clone::Clone;
+use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 static PROJECTION_ID_COL: Lazy<TableColumn> =
     Lazy::new(|| TableColumn::new("projection_id").unwrap());
@@ -85,7 +87,7 @@ pub struct SqlQueryFactory {
 
     where_persistence_id: OnceCell<String>,
 
-    select_persistence_ids: OnceCell<String>,
+    select_persistence_ids: HashMap<EntryPayloadTypes, Arc<str>>,
     select_event: OnceCell<String>,
     select_events_range: OnceCell<String>,
     select_latest_events: OnceCell<String>,
@@ -126,7 +128,7 @@ impl SqlQueryFactory {
             snapshot_manifest_column: SNAPSHOT_MANIFEST_COL.clone(),
             snapshot_payload_column: SNAPSHOT_PAYLOAD_COL.clone(),
             where_persistence_id: OnceCell::new(),
-            select_persistence_ids: OnceCell::new(),
+            select_persistence_ids: HashMap::new(),
             select_event: OnceCell::new(),
             select_events_range: OnceCell::new(),
             select_latest_events: OnceCell::new(),
@@ -246,33 +248,38 @@ impl SqlQueryFactory {
     }
 
     #[inline]
-    pub fn select_persistence_ids(&self, entry_types: &EntryPayloadTypes) -> &str {
-        self.select_persistence_ids.get_or_init(|| {
-            let select_sql = sql::Select::new()
-                .select(format!("DISTINCT {}", self.persistence_id_column()).as_str())
-                .from(self.event_journal_table());
+    pub fn select_persistence_ids(&mut self, entry_types: &EntryPayloadTypes) -> Arc<str> {
+        if let Some(query_sql) = self.select_persistence_ids.get(entry_types) {
+            return query_sql.clone();
+        }
 
-            let select_sql = match entry_types {
-                EntryPayloadTypes::All => select_sql,
-                EntryPayloadTypes::Set(known_types) => {
-                    let known_entry_types = format!(
-                        "{event_manifest} LIKE ({k_types})",
-                        event_manifest = self.event_manifest_column(),
-                        k_types = known_types.iter().map(|e| format!("'{e}'")).join(",")
-                    );
-                    select_sql.where_clause(&known_entry_types)
-                }
-                EntryPayloadTypes::Single(known_type) => {
-                    let known_clause = format!(
-                        "{event_manifest} = '{known_type}'",
-                        event_manifest = self.event_manifest_column()
-                    );
-                    select_sql.where_clause(&known_clause)
-                }
-            };
+        let select_sql = sql::Select::new()
+            .select(format!("DISTINCT {}", self.persistence_id_column()).as_str())
+            .from(self.event_journal_table());
 
-            select_sql.to_string()
-        })
+        let select_sql = match entry_types {
+            EntryPayloadTypes::All => select_sql,
+            EntryPayloadTypes::Set(known_types) => {
+                let known_entry_types = format!(
+                    "{event_manifest} LIKE ({k_types})",
+                    event_manifest = self.event_manifest_column(),
+                    k_types = known_types.iter().map(|e| format!("'{e}'")).join(",")
+                );
+                select_sql.where_clause(&known_entry_types)
+            }
+            EntryPayloadTypes::Single(known_type) => {
+                let known_clause = format!(
+                    "{event_manifest} = '{known_type}'",
+                    event_manifest = self.event_manifest_column()
+                );
+                select_sql.where_clause(&known_clause)
+            }
+        };
+
+        self.select_persistence_ids
+            .entry(entry_types.clone())
+            .or_insert_with(|| select_sql.to_string().into())
+            .clone()
     }
 
     #[inline]
