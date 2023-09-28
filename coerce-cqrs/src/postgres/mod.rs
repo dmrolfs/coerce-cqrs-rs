@@ -13,7 +13,9 @@ pub use provider::{PostgresJournalStorage, PostgresStorageProvider};
 
 use crate::projection::PersistenceId;
 use anyhow::anyhow;
+use lazy_regex::lazy_regex;
 use nutype::nutype;
+use regex::Regex;
 use sqlx::database::{HasArguments, HasValueRef};
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
@@ -79,9 +81,18 @@ impl std::fmt::Display for TableColumn {
     }
 }
 
+static STORAGE_KEY_REGEX: lazy_regex::Lazy<Regex> = lazy_regex!(
+    r"(?x)
+      ^
+      (([^:]+):)?             # First part (optional)
+      (([^:]+)::([^:]+)):     # Second part with two subparts
+      ([^:]+)                 # Third part
+    $"
+);
+
 #[nutype(
     sanitize(trim)
-    validate(not_empty)
+    validate(not_empty, regex = STORAGE_KEY_REGEX)
 )]
 #[derive(
     Debug,
@@ -223,16 +234,7 @@ impl SimpleStorageKeyCodec {
 impl StorageKeyCodec for SimpleStorageKeyCodec {
     #[instrument(level = "debug")]
     fn key_into_parts(&self, key: StorageKey) -> Result<StorageKeyParts, PostgresStorageError> {
-        let decompose = lazy_regex::regex!(
-            r"(?x)
-              ^
-              (([^:]+):)?             # First part (optional)
-              (([^:]+)::([^:]+)):     # Second part with two subparts
-              ([^:]+)                 # Third part
-            $"
-        );
-
-        let decomposed_captures = decompose.captures(key.as_ref());
+        let decomposed_captures = STORAGE_KEY_REGEX.captures(key.as_ref());
         // debug!("DMR: decomposed_captures: {decomposed_captures:?}");
         let result = if let Some(captures) = decomposed_captures {
             let prefix = captures.get(2).map(|c2| c2.as_str().to_string());
@@ -282,4 +284,32 @@ pub enum PostgresStorageError {
 
     #[error("{0}")]
     Storage(anyhow::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::postgres::{EntryType, SimpleStorageKeyCodec, StorageKey, StorageKeyCodec};
+    use crate::projection::PersistenceId;
+    use claim::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_storage_key_codec() -> anyhow::Result<()> {
+        let codec = SimpleStorageKeyCodec::default();
+
+        let _ = assert_err!(StorageKey::new("WAZ558:journal"));
+
+        let storage_key = assert_ok!(StorageKey::new("LocationZone::WAZ558:journal"));
+        let (actual_prefix, actual_persistence_id, actual_entry_type) =
+            assert_ok!(codec.key_into_parts(storage_key.clone()));
+
+        assert_none!(actual_prefix);
+        assert_eq!(
+            actual_persistence_id,
+            PersistenceId::from_parts("LocationZone", "WAZ558")
+        );
+        assert_eq!(actual_entry_type, EntryType::Journal);
+
+        Ok(())
+    }
 }
