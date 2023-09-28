@@ -492,12 +492,6 @@ mod actor {
                 .await
                 .map_err(|err| PostgresStorageError::Storage(err.into()));
 
-            debug!(
-                ?save_projection_result,
-                ?save_offset_result,
-                "DMR: save projection and offset query submitted."
-            );
-
             if let Err(error) = tx.commit().await {
                 error!(
                     %projection_name, %persistence_id, %view_key, ?last_offset,
@@ -509,7 +503,7 @@ mod actor {
             let result = save_projection_result.and_then(|projection| {
                 save_offset_result.map(|offset| SavedProjectOutcome { projection, offset })
             });
-            debug!("DMR: save_projection committed: {result:?}");
+            debug!("save_projection committed: {result:?}");
             result
         }
     }
@@ -525,29 +519,19 @@ mod actor {
             let projection_name = message.projection_name();
             let persistence_id_col = self.sql_query.persistence_id_column();
             let sql = self.sql_query.select_all_offsets();
-            debug!(%projection_name, %persistence_id_col, %sql, "DMR-AAA");
 
             let sql_result = sqlx::query(sql)
                 .bind(projection_name)
                 .map(|row: PgRow| {
                     let id: PersistenceId = row.get(persistence_id_col);
-                    debug!(persistence_id=%id, "DMR-BBB");
                     let offset = self.offset_from_row(row);
-                    debug!(?offset, "DMR-CCC");
                     (id, offset)
                 })
                 .fetch_all(&self.pool)
                 .await;
-            debug!(?sql_result, "DMR-DDD");
+
             let result = sql_result
-                .map(|results| {
-                    debug!(
-                        ?results,
-                        "DMR: read all offsets for {}",
-                        message.projection_name()
-                    );
-                    results.into_iter().collect()
-                })
+                .map(|results| results.into_iter().collect())
                 .map_err(|err| {
                     error!(
                         ?err,
@@ -557,7 +541,7 @@ mod actor {
                     err.into()
                 });
 
-            debug!(?result, "DMR-EEE");
+            debug!("offsets by entity: {result:?}");
             result
         }
     }
