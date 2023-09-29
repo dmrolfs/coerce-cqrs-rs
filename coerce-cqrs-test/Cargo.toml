@@ -19,6 +19,7 @@ coerce-macros = "0.2.0"
 
 anyhow = "1.0.75"
 async-trait = "0.1.73"
+bitcode = "0.4.0"
 dashmap = "5.5.3"
 #delegate = "0.9.0"
 futures = "0.3.28"

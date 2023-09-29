@@ -10,7 +10,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use tagid::{CuidGenerator, Entity, Label};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bitcode::Encode, bitcode::Decode)]
 pub struct TestView {
     pub label: String,
     pub count: usize,
@@ -26,6 +26,18 @@ impl Default for TestView {
             events: vec![],
             sum: 0,
         }
+    }
+}
+
+impl BinaryProjection for TestView {
+    type BinaryCodecError = bitcode::Error;
+
+    fn as_bytes(&self) -> Result<Vec<u8>, Self::BinaryCodecError> {
+        bitcode::encode(self)
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::BinaryCodecError> {
+        bitcode::decode(bytes)
     }
 }
 
@@ -88,6 +100,7 @@ pub enum TestCommand {
 }
 
 use crate::fixtures::actor::TestActorSnapshot;
+use coerce_cqrs::postgres::BinaryProjection;
 use strum_macros::Display;
 
 #[derive(Debug, PartialEq, Eq, Display, Serialize, Deserialize)]
@@ -144,7 +157,17 @@ impl Message for ProvokeError {
     type Result = Result<(), ActorRefErr>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, JsonMessage, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    JsonMessage,
+    bitcode::Encode,
+    bitcode::Decode,
+    Serialize,
+    Deserialize,
+)]
 #[result("()")]
 pub enum TestEvent {
     Started(String),

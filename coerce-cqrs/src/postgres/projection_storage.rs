@@ -8,9 +8,8 @@ use crate::projection::{
 };
 use coerce::actor::system::ActorSystem;
 use coerce::actor::{IntoActor, LocalActorRef};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use smol_str::SmolStr;
+use std::error::Error;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -21,17 +20,28 @@ pub struct ProjectionEntry {
     pub bytes: Arc<Vec<u8>>,
 }
 
+pub trait BinaryProjection: Send + Sync
+where
+    Self: Sized,
+{
+    type BinaryCodecError: Error + Send + Sync + 'static;
+
+    fn as_bytes(&self) -> Result<Vec<u8>, Self::BinaryCodecError>;
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::BinaryCodecError>;
+}
+
 /// A Postgres-backed view storage for use in a GenericViewProcessor.
 #[derive(Debug, Clone)]
-pub struct PostgresProjectionStorage<V> {
+pub struct PostgresProjectionStorage<P> {
     name: SmolStr,
     view_storage_table: Option<TableName>,
     offset_storage_table: TableName,
     storage: LocalActorRef<PostgresProjectionStorageActor>,
-    _marker: PhantomData<V>,
+    _marker: PhantomData<P>,
 }
 
-impl<V> PostgresProjectionStorage<V> {
+impl<P: BinaryProjection> PostgresProjectionStorage<P> {
     #[instrument(level = "trace", skip(config, system,))]
     pub async fn new(
         name: &str,
@@ -77,12 +87,12 @@ impl<V> PostgresProjectionStorage<V> {
 }
 
 #[async_trait]
-impl<V> ProjectionStorage for PostgresProjectionStorage<V>
+impl<P> ProjectionStorage for PostgresProjectionStorage<P>
 where
-    V: Serialize + DeserializeOwned + Debug + Default + Clone + Send + Sync,
+    P: BinaryProjection + Debug,
 {
     type ViewId = PersistenceId;
-    type Projection = V;
+    type Projection = P;
 
     fn name(&self) -> &str {
         self.name.as_str()
@@ -208,12 +218,17 @@ where
     }
 }
 
-fn as_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, ProjectionError> {
-    serde_json::to_vec(value).map_err(ProjectionError::Encode)
+fn as_bytes<T>(value: &T) -> Result<Vec<u8>, ProjectionError>
+where
+    T: BinaryProjection + Send + Sync,
+{
+    value
+        .as_bytes()
+        .map_err(|err| ProjectionError::Encode(err.into()))
 }
 
-fn from_bytes<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, ProjectionError> {
-    serde_json::from_slice(bytes).map_err(ProjectionError::Decode)
+fn from_bytes<T: BinaryProjection>(bytes: &[u8]) -> Result<T, ProjectionError> {
+    T::from_bytes(bytes).map_err(|err| ProjectionError::Decode(err.into()))
 }
 
 mod actor {

@@ -8,7 +8,7 @@ mod projection_storage;
 mod sql_query;
 
 pub use config::PostgresStorageConfig;
-pub use projection_storage::PostgresProjectionStorage;
+pub use projection_storage::{BinaryProjection, PostgresProjectionStorage};
 pub use provider::{PostgresJournalStorage, PostgresStorageProvider};
 
 use crate::projection::PersistenceId;

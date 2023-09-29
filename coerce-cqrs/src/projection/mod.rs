@@ -120,12 +120,12 @@ pub enum ProjectionError {
     #[error("{0}")]
     Sql(#[from] sqlx::Error),
 
-    #[error("{0}")]
-    Decode(#[from] serde_json::error::Error),
-    // Decode(#[from] bincode::error::DecodeError),
-    #[error("{0}")]
-    Encode(#[source] serde_json::error::Error),
-    // Encode(#[from] bincode::error::EncodeError),
+    #[error("failed to decode projection from bytes: {0}")]
+    Decode(#[source] anyhow::Error),
+
+    #[error("failed to encode projection into bytes: {0}")]
+    Encode(#[source] anyhow::Error),
+
     #[error("{0}")]
     TaskJoin(#[source] tokio::task::JoinError),
 

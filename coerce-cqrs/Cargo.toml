@@ -56,3 +56,4 @@ pretty_assertions = "1.4.0"
 serde_test = "1.0.176"
 static_assertions = "1.1.0"
 tokio-test = "0.4.3"
+bitcode = { version = "0.4.0"  }

@@ -1,6 +1,5 @@
 use crate::projection::{Offset, PersistenceId, ProjectionError};
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::sync::Arc;
 
 pub type ProjectionStorageRef<ID, P> = Arc<dyn ProjectionStorage<ViewId = ID, Projection = P>>;
@@ -9,7 +8,7 @@ pub type AggregateOffsets = HashMap<PersistenceId, Offset>;
 #[async_trait]
 pub trait ProjectionStorage: Send + Sync {
     type ViewId: From<PersistenceId>;
-    type Projection: Default + Debug + Clone;
+    type Projection;
 
     fn name(&self) -> &str;
 
