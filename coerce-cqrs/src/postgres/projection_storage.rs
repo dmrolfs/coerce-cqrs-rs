@@ -105,7 +105,7 @@ where
             actor::protocol::load_projection(&self.storage, &self.view_key_for(view_id))
                 .await
                 .map_err(|err| ProjectionError::Storage {
-                    cause: err.into(),
+                    source: err.into(),
                     meta: maplit::hashmap! {
                         META_VIEW_TABLE.to_string() => self.view_storage_table.as_ref().map(|t| t.to_string()).unwrap_or_else(|| "<none>".to_string()),
                         META_PERSISTENCE_ID.to_string() => view_id.to_string(),
@@ -118,19 +118,18 @@ where
             .as_ref()
             .map(|e| {
                 debug!(projection_entry=?e, "DMR:BBB");
-                let p = bincode::serde::decode_from_slice(e.bytes.as_slice(), bincode::config::standard())
-                    .map(|(projection, _size)| projection);
+                let p = from_bytes(e.bytes.as_slice());
                 debug!(projection=?p, "DMR: CCC");
                 p
             })
-            .transpose()?;
+            .transpose();
 
         debug!(
             ?projection_entry,
             ?projection,
             "loaded projection for {view_id}"
         );
-        Ok(projection)
+        projection
     }
 
     #[instrument(
@@ -149,11 +148,9 @@ where
         last_offset: Offset,
     ) -> Result<(), ProjectionError> {
         debug!(?view_id, ?projection, "DMR: AAA");
-        let bytes = projection
-            .map(|p| bincode::serde::encode_to_vec(p, bincode::config::standard()))
-            .transpose()?;
+        let bytes = projection.map(|p| as_bytes(&p)).transpose();
         debug!(?bytes, "DMR: BBB");
-        let bytes = bytes.map(Arc::new);
+        let bytes = bytes?.map(Arc::new);
         let entry = bytes.map(|b| ProjectionEntry { bytes: b });
         let query_result = actor::protocol::save_projection(
             &self.storage,
@@ -165,7 +162,7 @@ where
         )
         .await
         .map_err(|err| ProjectionError::Storage {
-            cause: err.into(),
+            source: err.into(),
             meta: maplit::hashmap! {
                 META_VIEW_TABLE.to_string() => self.view_storage_table.as_ref().map(|t| t.to_string()).unwrap_or_else(|| "<none>".to_string()),
                 META_OFFSET_TABLE.to_string() => self.offset_storage_table.to_string(),
@@ -185,7 +182,7 @@ where
         actor::protocol::load_all_offsets(&self.storage, projection_name)
             .await
             .map_err(|err| ProjectionError::Storage {
-                cause: err.into(),
+                source: err.into(),
                 meta: maplit::hashmap! {
                     META_OFFSET_TABLE.to_string() => self.offset_storage_table.to_string(),
                     META_PROJECTION_NAME.to_string() => projection_name.to_string(),
@@ -201,7 +198,7 @@ where
         actor::protocol::load_offset(&self.storage, projection_name, persistence_id)
             .await
             .map_err(|err| ProjectionError::Storage {
-                cause: err.into(),
+                source: err.into(),
                 meta: maplit::hashmap! {
                     META_OFFSET_TABLE.to_string() => self.offset_storage_table.to_string(),
                     META_PROJECTION_NAME.to_string() => projection_name.to_string(),
@@ -209,6 +206,14 @@ where
                 },
             })
     }
+}
+
+fn as_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, ProjectionError> {
+    serde_json::to_vec(value).map_err(ProjectionError::Encode)
+}
+
+fn from_bytes<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, ProjectionError> {
+    serde_json::from_slice(bytes).map_err(ProjectionError::Decode)
 }
 
 mod actor {

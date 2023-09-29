@@ -21,6 +21,6 @@ impl ProcessorEngine<Running> {
     #[instrument(level = "trace", skip(self))]
     pub async fn block_for_completion(self) -> Result<(), ProjectionError> {
         let handle = self.inner.handle.fuse();
-        handle.await?
+        handle.await.map_err(ProjectionError::TaskJoin)?
     }
 }

@@ -121,13 +121,13 @@ pub enum ProjectionError {
     Sql(#[from] sqlx::Error),
 
     #[error("{0}")]
-    Decode(#[from] bincode::error::DecodeError),
-
+    Decode(#[from] serde_json::error::Error),
+    // Decode(#[from] bincode::error::DecodeError),
     #[error("{0}")]
-    Encode(#[from] bincode::error::EncodeError),
-
+    Encode(#[source] serde_json::error::Error),
+    // Encode(#[from] bincode::error::EncodeError),
     #[error("{0}")]
-    TaskJoin(#[from] tokio::task::JoinError),
+    TaskJoin(#[source] tokio::task::JoinError),
 
     #[error("{0}")]
     MessageUnwrap(#[from] coerce::actor::message::MessageUnwrapErr),
@@ -135,9 +135,9 @@ pub enum ProjectionError {
     #[error("Invalid persistence_id: {0}")]
     Id(String),
 
-    #[error("meta:{meta:?}, {cause}")]
+    #[error("meta:{meta:?}, {source}")]
     Storage {
-        cause: anyhow::Error,
+        source: anyhow::Error,
         meta: HashMap<String, String>,
     },
 
