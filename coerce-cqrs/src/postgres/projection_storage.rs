@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use crate::postgres::projection_storage::actor::PostgresProjectionStorageActor;
 use crate::postgres::{config, TableName};
 use crate::postgres::{PostgresStorageConfig, PostgresStorageError};
@@ -29,6 +30,37 @@ where
     fn as_bytes(&self) -> Result<Vec<u8>, Self::BinaryCodecError>;
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::BinaryCodecError>;
+}
+
+impl BinaryProjection for () {
+    type BinaryCodecError = Infallible;
+
+    fn as_bytes(&self) -> Result<Vec<u8>, Self::BinaryCodecError> {
+        Ok(vec![])
+    }
+
+    fn from_bytes(_bytes: &[u8]) -> Result<Self, Self::BinaryCodecError> {
+        Ok(())
+    }
+}
+
+impl<T> BinaryProjection for Option<T>
+where
+    T: BinaryProjection,
+{
+    type BinaryCodecError = T::BinaryCodecError;
+
+    fn as_bytes(&self) -> Result<Vec<u8>, Self::BinaryCodecError> {
+        self.as_ref().map(|t| t.as_bytes()).unwrap_or_else(|| Ok(vec![]))
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::BinaryCodecError> {
+        if bytes.is_empty() {
+            Ok(None)
+        } else {
+            T::from_bytes(bytes).map(Some)
+        }
+    }
 }
 
 /// A Postgres-backed view storage for use in a GenericViewProcessor.
