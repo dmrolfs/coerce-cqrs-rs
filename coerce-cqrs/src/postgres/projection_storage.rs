@@ -112,12 +112,16 @@ where
                         META_PROJECTION_NAME.to_string() => self.name.to_string(),
                     },
                 })?;
+        debug!(?projection_entry, "DMR: AAA");
 
         let projection = projection_entry
             .as_ref()
             .map(|e| {
-                bincode::serde::decode_from_slice(e.bytes.as_slice(), bincode::config::standard())
-                    .map(|(projection, _size)| projection)
+                debug!(projection_entry=?e, "DMR:BBB");
+                let p = bincode::serde::decode_from_slice(e.bytes.as_slice(), bincode::config::standard())
+                    .map(|(projection, _size)| projection);
+                debug!(projection=?p, "DMR: CCC");
+                p
             })
             .transpose()?;
 
@@ -144,9 +148,11 @@ where
         projection: Option<Self::Projection>,
         last_offset: Offset,
     ) -> Result<(), ProjectionError> {
+        debug!(?view_id, ?projection, "DMR: AAA");
         let bytes = projection
             .map(|p| bincode::serde::encode_to_vec(p, bincode::config::standard()))
             .transpose()?;
+        debug!(?bytes, "DMR: BBB");
         let bytes = bytes.map(Arc::new);
         let entry = bytes.map(|b| ProjectionEntry { bytes: b });
         let query_result = actor::protocol::save_projection(
