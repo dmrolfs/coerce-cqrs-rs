@@ -45,17 +45,17 @@ where
     }
 
     #[instrument(level="debug", skip(self), fields(projection_name=%self.name))]
-    async fn save_projection(
+    async fn save_projection_and_last_offset(
         &self,
         view_id: &Self::ViewId,
         projection: Option<Self::Projection>,
-        offset: Offset,
+        last_offset: Offset,
     ) -> Result<(), ProjectionError> {
         let is_new_projection = projection.is_some();
         let prior_view = projection.and_then(|p| self.view_store.insert(view_id.clone(), p));
-        let prior_offset = self.offset_store.insert(view_id.clone(), offset);
+        let prior_offset = self.offset_store.insert(view_id.clone(), last_offset);
         debug!(
-            "save {} view's offset [{}::{view_id}] = {offset:?} was {prior_offset:?}",
+            "save {} view's offset [{}::{view_id}] = {last_offset:?} was {prior_offset:?}",
             if !is_new_projection {
                 "not-updated"
             } else if prior_view.is_none() {
@@ -118,7 +118,7 @@ mod tests {
             };
             assert_ok!(
                 storage
-                    .save_projection(&vid, Some(view.clone()), Offset::new(1))
+                    .save_projection_and_last_offset(&vid, Some(view.clone()), Offset::new(1))
                     .await
             );
             let saved = assert_some!(assert_ok!(storage.load_projection(&vid).await));

@@ -20,11 +20,11 @@ pub trait ProjectionStorage: Send + Sync {
 
     /// saves the projection instance for the context, used by the `GenericProjectionProcessor` to
     /// record projections updated by committed events.
-    async fn save_projection(
+    async fn save_projection_and_last_offset(
         &self,
         view_id: &Self::ViewId,
         projection: Option<Self::Projection>,
-        offset: Offset,
+        last_offset: Offset,
     ) -> Result<(), ProjectionError>;
 
     /// Returns all of the offsets seen by the processor. When the processor pull the next batch of,

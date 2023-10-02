@@ -1,4 +1,3 @@
-use std::convert::Infallible;
 use crate::postgres::projection_storage::actor::PostgresProjectionStorageActor;
 use crate::postgres::{config, TableName};
 use crate::postgres::{PostgresStorageConfig, PostgresStorageError};
@@ -10,6 +9,7 @@ use crate::projection::{
 use coerce::actor::system::ActorSystem;
 use coerce::actor::{IntoActor, LocalActorRef};
 use smol_str::SmolStr;
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -51,7 +51,9 @@ where
     type BinaryCodecError = T::BinaryCodecError;
 
     fn as_bytes(&self) -> Result<Vec<u8>, Self::BinaryCodecError> {
-        self.as_ref().map(|t| t.as_bytes()).unwrap_or_else(|| Ok(vec![]))
+        self.as_ref()
+            .map(|t| t.as_bytes())
+            .unwrap_or_else(|| Ok(vec![]))
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::BinaryCodecError> {
@@ -143,6 +145,10 @@ where
         &self,
         view_id: &Self::ViewId,
     ) -> Result<Option<Self::Projection>, ProjectionError> {
+        if self.view_storage_table.is_none() {
+            return Ok(None);
+        }
+
         let projection_entry =
             actor::protocol::load_projection(&self.storage, &self.view_key_for(view_id))
                 .await
@@ -154,16 +160,10 @@ where
                         META_PROJECTION_NAME.to_string() => self.name.to_string(),
                     },
                 })?;
-        debug!(?projection_entry, "DMR: AAA");
 
         let projection = projection_entry
             .as_ref()
-            .map(|e| {
-                debug!(projection_entry=?e, "DMR:BBB");
-                let p = from_bytes(e.bytes.as_slice());
-                debug!(projection=?p, "DMR: CCC");
-                p
-            })
+            .map(|e| from_bytes(e.bytes.as_slice()))
             .transpose();
 
         debug!(
@@ -183,15 +183,13 @@ where
             offset_storage_table=%self.offset_storage_table,
         )
     )]
-    async fn save_projection(
+    async fn save_projection_and_last_offset(
         &self,
         view_id: &Self::ViewId,
         projection: Option<Self::Projection>,
         last_offset: Offset,
     ) -> Result<(), ProjectionError> {
-        debug!(?view_id, ?projection, "DMR: AAA");
         let bytes = projection.map(|p| as_bytes(&p)).transpose();
-        debug!(?bytes, "DMR: BBB");
         let bytes = bytes?.map(Arc::new);
         let entry = bytes.map(|b| ProjectionEntry { bytes: b });
         let query_result = actor::protocol::save_projection(

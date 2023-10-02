@@ -277,7 +277,7 @@ where
         }
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, entries))]
     async fn do_process_aggregate_entries(
         &mut self,
         entries: Vec<JournalEntry>,
@@ -355,7 +355,7 @@ where
             );
             self.inner
                 .projection_storage
-                .save_projection(&ctx.view_id(), updated_projection, last_offset)
+                .save_projection_and_last_offset(&ctx.view_id(), updated_projection, last_offset)
                 .await?;
         }
 

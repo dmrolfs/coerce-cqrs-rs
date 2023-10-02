@@ -232,7 +232,7 @@ impl SimpleStorageKeyCodec {
 }
 
 impl StorageKeyCodec for SimpleStorageKeyCodec {
-    #[instrument(level = "debug")]
+    #[instrument(level = "trace")]
     fn key_into_parts(&self, key: StorageKey) -> Result<StorageKeyParts, PostgresStorageError> {
         let decomposed_captures = STORAGE_KEY_REGEX.captures(key.as_ref());
         // debug!("DMR: decomposed_captures: {decomposed_captures:?}");
