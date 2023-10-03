@@ -12,6 +12,9 @@ categories = ["actor", "event", "cqrs"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# fixed deps to resolve compile/link issues
+protobuf = "=3.2.0"
+
 coerce = { version = "0.8.10", features = ["full",] }
 coerce-macros = "0.2.0"
 
