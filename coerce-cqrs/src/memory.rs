@@ -165,7 +165,7 @@ impl JournalStorage for InMemoryJournalStorage {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(entries))]
     async fn write_message_batch(
         &self,
         persistence_id: &str,

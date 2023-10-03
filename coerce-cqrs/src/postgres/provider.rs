@@ -155,7 +155,7 @@ impl JournalStorage for PostgresJournalStorage {
             .with_context(|| format!("failed writing message for {persistence_id}"))
     }
 
-    #[instrument(level = "debug", skip())]
+    #[instrument(level = "debug", skip(entries))]
     async fn write_message_batch(
         &self,
         persistence_id: &str,

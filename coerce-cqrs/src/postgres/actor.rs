@@ -56,30 +56,58 @@ pub(in crate::postgres) mod protocol {
         type Result = Result<Option<Vec<JournalEntry>>, PostgresStorageError>;
     }
 
-    #[derive(Debug)]
     pub struct WriteMessage {
         pub(in crate::postgres) storage_key: StorageKey,
         pub entry: JournalEntry,
+    }
+
+    impl fmt::Debug for WriteMessage {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("WriteMessage")
+                .field("storage_key", &self.storage_key)
+                .field("entry_sequence", &self.entry.sequence)
+                .field("entry_payload_type", &self.entry.payload_type)
+                .field("entry_nr_bytes", &self.entry.bytes.len())
+                .finish()
+        }
     }
 
     impl Message for WriteMessage {
         type Result = Result<(), PostgresStorageError>;
     }
 
-    #[derive(Debug)]
     pub struct WriteMessages {
         pub(in crate::postgres) storage_key: StorageKey,
         pub entries: Vec<JournalEntry>,
+    }
+
+    impl fmt::Debug for WriteMessages {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("WriteMessages")
+                .field("storage_key", &self.storage_key)
+                .field("nr_entries", &self.entries.len())
+                .finish()
+        }
     }
 
     impl Message for WriteMessages {
         type Result = Result<(), PostgresStorageError>;
     }
 
-    #[derive(Debug)]
     pub struct WriteSnapshot {
         pub(in crate::postgres) storage_key: StorageKey,
         pub entry: JournalEntry,
+    }
+
+    impl fmt::Debug for WriteSnapshot {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("WriteSnapshot")
+                .field("storage_key", &self.storage_key)
+                .field("entry_sequence", &self.entry.sequence)
+                .field("entry_payload_type", &self.entry.payload_type)
+                .field("entry_nr_bytes", &self.entry.bytes.len())
+                .finish()
+        }
     }
 
     impl Message for WriteSnapshot {
